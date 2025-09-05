@@ -1,25 +1,10 @@
-/**
- * Welcome to Cloudflare Workers! This is your first worker.
- *
- * - Run `npm run dev` in your terminal to start a development server
- * - Open a browser tab at http://localhost:8787/ to see your worker in action
- * - Run `npm run deploy` to publish your worker
- *
- * Learn more at https://developers.cloudflare.com/workers/
- */
-
-// export default {
-// 	async fetch(request, env, ctx) {
-// 		return new Response('Hello World!');
-// 	},
-// };
 export default {
   async fetch(request, env, ctx) {
     if (request.method === "OPTIONS") {
       return new Response(null, {
         status: 204,
         headers: {
-          "Access-Control-Allow-Origin": "*", 
+          "Access-Control-Allow-Origin": "*",
           "Access-Control-Allow-Methods": "POST, OPTIONS",
           "Access-Control-Allow-Headers": "Content-Type, Authorization",
         },
@@ -29,17 +14,15 @@ export default {
     if (request.method !== "POST") {
       return new Response("Method not allowed", {
         status: 405,
-        headers: {
-          "Access-Control-Allow-Origin": "*",
-        },
+        headers: { "Access-Control-Allow-Origin": "*" },
       });
     }
 
     try {
-      const { email } = await request.json();
-      if (!email) {
+      const { email, shopify_customer_id } = await request.json();
+      if (!email || !shopify_customer_id) {
         return new Response(
-          JSON.stringify({ success: false, message: "Missing email" }),
+          JSON.stringify({ success: false, message: "Missing email or shopify_customer_id" }),
           {
             status: 400,
             headers: {
@@ -50,7 +33,7 @@ export default {
         );
       }
 
-      // Call ByDesign
+      // Call ByDesign API
       const byDesignResp = await fetch(
         "https://webapi.securefreedom.com/VoxxLife/api/users/customer/CustomerLookup",
         {
@@ -65,30 +48,69 @@ export default {
       );
 
       const byDesignData = await byDesignResp.json();
-      const exists =
-        Array.isArray(byDesignData) && byDesignData.some((c) => c.Email === email);
+      const customer = Array.isArray(byDesignData)
+        ? byDesignData.find((c) => c.Email === email)
+        : null;
 
-      const customer = exists ? byDesignData.find((c) => c.Email === email) : null;
+      if (customer) {
+        // Update Shopify Customer
+        const shopifyResp = await fetch(
+          `https://${env.SHOP}/admin/api/2025-01/customers/${shopify_customer_id}.json`,
+          {
+            method: "PUT",
+            headers: {
+              "X-Shopify-Access-Token": env.SHOPIFY_API_KEY,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              customer: {
+                id: shopify_customer_id,
+                first_name: customer.FirstName,
+                last_name: customer.LastName,
+                phone: customer.Phone,
+                email: customer.Email,
+                addresses: [
+                  {
+                    address1: customer.Address1,
+                    city: customer.City,
+                    province: customer.State,
+                    zip: customer.Zip,
+                    country: customer.Country,
+                  },
+                ],
+              },
+            }),
+          }
+        );
 
-      // Response with CORS headers
+        const shopifyResult = await shopifyResp.json();
+
+        return new Response(
+          JSON.stringify({ success: true, updated: true, shopify: shopifyResult }),
+          {
+            status: 200,
+            headers: {
+              "Content-Type": "application/json",
+              "Access-Control-Allow-Origin": "*",
+            },
+          }
+        );
+      }
+
+      // Customer not found in ByDesign
       return new Response(
-        JSON.stringify({
-          success: true,
-          exists,
-          customer: customer || null,
-          message: exists ? "Customer found" : "Customer not found",
-        }),
+        JSON.stringify({ success: true, updated: false, message: "Customer not found in ByDesign" }),
         {
           status: 200,
           headers: {
             "Content-Type": "application/json",
-            "Access-Control-Allow-Origin": "*", // allow your Shopify store
+            "Access-Control-Allow-Origin": "*",
           },
         }
       );
     } catch (err) {
       return new Response(
-        JSON.stringify({ success: false, message: err.message }),
+        JSON.stringify({ success: false, error: err.message }),
         {
           status: 500,
           headers: {
@@ -100,5 +122,3 @@ export default {
     }
   },
 };
-
-
