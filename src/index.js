@@ -71,7 +71,6 @@ export default {
                             province: byDesignCustomer.BillState,
                             country: byDesignCustomer.BillCountry,
                             zip: byDesignCustomer.BillPostalCode,
-                            phone: byDesignCustomer.Phone1,
                             firstName: byDesignCustomer.FirstName,
                             lastName: byDesignCustomer.LastName,
                             setAsDefault: true, // set default to first, Shopify treats first as default
@@ -93,7 +92,6 @@ export default {
                             province: byDesignCustomer.ShipState,
                             country: byDesignCustomer.ShipCountry,
                             zip: byDesignCustomer.ShipPostalCode,
-                            phone: byDesignCustomer.Phone1,
                             firstName: byDesignCustomer.FirstName,
                             lastName: byDesignCustomer.LastName,
                             setAsDefault: false
@@ -218,7 +216,6 @@ async function createCustomerInShopify(customer, shop, token) {
         email: customer.Email,
         firstName: customer.FirstName || "",
         lastName: customer.LastName || "",
-        phone: customer.Phone1 || null,
     };
 
     const res = await fetch(`https://${shop}/admin/api/2025-07/graphql.json`, {
@@ -254,7 +251,6 @@ async function createCustomerAddressInShopify(customerId, address, shop, token) 
                 province
                 country
                 zip
-                phone
                 firstName
                 lastName
             }
