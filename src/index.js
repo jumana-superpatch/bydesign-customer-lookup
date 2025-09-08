@@ -4,146 +4,152 @@ export default {
     const email = url.searchParams.get("email");
 
     if (!email) {
-      return new Response(JSON.stringify({ error: "Missing email" }), {
-        status: 400,
-        headers: { "Content-Type": "application/json" },
-      });
+      return jsonResponse({ error: "Missing email" }, 400);
     }
 
     try {
-      // STEP 1: Check in Shopify
+      // 1) Lookup in Shopify
       const shopifyResp = await fetch(
-        `https://${env.SHOPIFY_STORE_DOMAIN}/admin/api/2025-01/customers/search.json?query=email:${encodeURIComponent(
+        `https://${env.SHOPIFY_SHOP}/admin/api/2025-01/customers/search.json?query=email:${encodeURIComponent(
           email
         )}`,
         {
           headers: {
-            "X-Shopify-Access-Token": env.SHOPIFY_ADMIN_TOKEN,
+            "X-Shopify-Access-Token": env.SHAPETECH_API_KEY,
             "Content-Type": "application/json",
           },
         }
       );
 
       if (!shopifyResp.ok) {
-        return new Response(
-          JSON.stringify({
+        return jsonResponse(
+          {
             exists: false,
             foundIn: null,
             customer: null,
             error: `Shopify lookup failed: ${shopifyResp.status}`,
-          }),
-          { status: 500, headers: { "Content-Type": "application/json" } }
+          },
+          500
         );
       }
 
       const shopifyData = await shopifyResp.json();
-      if (shopifyData.customers && shopifyData.customers.length > 0) {
-        return new Response(
-          JSON.stringify({
-            exists: true,
-            foundIn: "shopify",
-            customer: shopifyData.customers[0],
-          }),
-          { headers: { "Content-Type": "application/json" } }
-        );
+      if (shopifyData.customers?.length > 0) {
+        return jsonResponse({
+          exists: true,
+          foundIn: "shopify",
+          customer: shopifyData.customers[0],
+        });
       }
 
-      // STEP 2: Check in ByDesign
+      // 2) Lookup in ByDesign
       const bydesignResp = await fetch(
-        `${env.BYDESIGN_API_URL}?email=${encodeURIComponent(email)}`,
+        `${env.BYDESIGN_BASE}/VoxxLife/api/users/customer/CustomerLookup`,
         {
-          headers: { Authorization: `Bearer ${env.SHAPETECH_API_KEY}` },
+          method: "POST",
+          headers: {
+            Accept: "application/json",
+            Authorization: `Basic ${env.BYDESIGN_API_KEY}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ Email: email }),
         }
       );
 
       if (!bydesignResp.ok) {
-        return new Response(
-          JSON.stringify({
+        return jsonResponse(
+          {
             exists: false,
             foundIn: null,
             customer: null,
             error: `ByDesign lookup failed: ${bydesignResp.status}`,
-          }),
-          { status: 500, headers: { "Content-Type": "application/json" } }
+          },
+          500
         );
       }
 
       const bydesignData = await bydesignResp.json();
-      if (!bydesignData || !bydesignData.CustomerID) {
-        return new Response(
-          JSON.stringify({
-            exists: false,
-            foundIn: null,
-            customer: null,
-          }),
-          { headers: { "Content-Type": "application/json" } }
-        );
+      if (!Array.isArray(bydesignData) || bydesignData.length === 0) {
+        return jsonResponse({ exists: false, foundIn: null, customer: null });
       }
 
-      // STEP 3: Build Shopify payload
-      const shopifyCustomerPayload = {
+      const bdCustomer = bydesignData.find(
+        (c) => c.Email?.toLowerCase() === email.toLowerCase()
+      );
+      if (!bdCustomer) {
+        return jsonResponse({ exists: false, foundIn: null, customer: null });
+      }
+
+      // 3) Build Shopify payload from ByDesign data
+      const shopifyPayload = {
         customer: {
-          first_name: bydesignData.FirstName || "",
-          last_name: bydesignData.LastName || "",
-          email: bydesignData.Email,
-          phone: bydesignData.Phone1 || null,
+          first_name: bdCustomer.FirstName || "",
+          last_name: bdCustomer.LastName || "",
+          email: bdCustomer.Email,
+          phone: bdCustomer.Phone1 || null,
           addresses: [
             {
-              address1: bydesignData.ShipStreet1 || bydesignData.BillStreet1,
-              city: bydesignData.ShipCity || bydesignData.BillCity,
-              province: bydesignData.ShipState || bydesignData.BillState,
-              zip: bydesignData.ShipPostalCode || bydesignData.BillPostalCode,
-              country: bydesignData.ShipCountry || bydesignData.BillCountry,
+              first_name: bdCustomer.FirstName || "",
+              last_name: bdCustomer.LastName || "",
+              address1: bdCustomer.ShipStreet1 || bdCustomer.BillStreet1,
+              address2: bdCustomer.ShipStreet2 || bdCustomer.BillStreet2,
+              city: bdCustomer.ShipCity || bdCustomer.BillCity,
+              province: bdCustomer.ShipState || bdCustomer.BillState,
+              zip: bdCustomer.ShipPostalCode || bdCustomer.BillPostalCode,
+              country: bdCustomer.ShipCountry || bdCustomer.BillCountry,
+              phone: bdCustomer.Phone1 || null,
             },
           ],
-          note: `Imported from ByDesign (CustomerID: ${bydesignData.CustomerID})`,
+          note: `Imported from ByDesign (CustomerID: ${bdCustomer.CustomerID})`,
         },
       };
 
-      // STEP 4: Create customer in Shopify
+      // 4) Create customer in Shopify
       const createResp = await fetch(
-        `https://${env.SHOPIFY_STORE_DOMAIN}/admin/api/2025-01/customers.json`,
+        `https://${env.SHOPIFY_SHOP}/admin/api/2025-01/customers.json`,
         {
           method: "POST",
           headers: {
-            "X-Shopify-Access-Token": env.SHOPIFY_ADMIN_TOKEN,
+            "X-Shopify-Access-Token": env.SHAPETECH_API_KEY,
             "Content-Type": "application/json",
           },
-          body: JSON.stringify(shopifyCustomerPayload),
+          body: JSON.stringify(shopifyPayload),
         }
       );
 
       if (!createResp.ok) {
         const errTxt = await createResp.text();
-        return new Response(
-          JSON.stringify({
+        return jsonResponse(
+          {
             exists: true,
             foundIn: "bydesign",
-            customer: bydesignData,
+            customer: bdCustomer,
             createdInShopify: null,
             error: `Shopify create failed: ${createResp.status} ${errTxt}`,
-          }),
-          { status: 500, headers: { "Content-Type": "application/json" } }
+          },
+          500
         );
       }
 
       const createdCustomer = await createResp.json();
 
-      // STEP 5: Return response
-      return new Response(
-        JSON.stringify({
-          exists: true,
-          foundIn: "bydesign",
-          customer: bydesignData,
-          createdInShopify: createdCustomer.customer,
-        }),
-        { headers: { "Content-Type": "application/json" } }
-      );
-    } catch (err) {
-      return new Response(JSON.stringify({ error: err.message }), {
-        status: 500,
-        headers: { "Content-Type": "application/json" },
+      // 5) Return final result
+      return jsonResponse({
+        exists: true,
+        foundIn: "bydesign",
+        customer: bdCustomer,
+        createdInShopify: createdCustomer.customer,
       });
+    } catch (err) {
+      return jsonResponse({ error: err.message }, 500);
     }
   },
 };
+
+/* ---- Utility ---- */
+function jsonResponse(data, status = 200) {
+  return new Response(JSON.stringify(data, null, 2), {
+    status,
+    headers: { "Content-Type": "application/json" },
+  });
+}
