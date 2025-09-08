@@ -22,9 +22,9 @@ export default {
         );
       }
 
-      console.log(`🔍 Looking up email: ${email}`);
+      console.log(`Looking up email: ${email}`);
 
-      // 1️⃣ Check in Shopify
+      // 1️ Check in Shopify
       const shopifyCustomer = await findCustomerInShopify(
         email,
         env.SHOPIFY_SHOP,
@@ -40,7 +40,7 @@ export default {
         });
       }
 
-      // 2️⃣ If not in Shopify, check ByDesign
+      // 2️ If not in Shopify, check ByDesign
       const byDesignCustomer = await findCustomerInByDesign(
         email,
         env.BYDESIGN_BASE,
