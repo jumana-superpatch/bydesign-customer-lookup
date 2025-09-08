@@ -1,18 +1,3 @@
-/**
- * Welcome to Cloudflare Workers! This is your first worker.
- *
- * - Run `npm run dev` in your terminal to start a development server
- * - Open a browser tab at http://localhost:8787/ to see your worker in action
- * - Run `npm run deploy` to publish your worker
- *
- * Learn more at https://developers.cloudflare.com/workers/
- */
-
-// export default {
-// 	async fetch(request, env, ctx) {
-// 		return new Response('Hello World!');
-// 	},
-// };
 export default {
   async fetch(request, env, ctx) {
     if (request.method === "OPTIONS") {
@@ -32,50 +17,63 @@ export default {
 
       if (!email) {
         return jsonResponse(
-          { foundIn: null, error: "Missing email" },
+          { exists: false, foundIn: null, customer: null, error: "Missing email" },
           400
         );
       }
 
-      // 1️ Check in Shopify
+      console.log(`🔍 Looking up email: ${email}`);
+
+      // 1️⃣ Check in Shopify
       const shopifyCustomer = await findCustomerInShopify(
         email,
         env.SHOPIFY_SHOP,
-        env.SHOPIFY_API_KEY
+        env.SHAPETECH_API_KEY
       );
+
       if (shopifyCustomer) {
+        console.log("✅ Found in Shopify:", shopifyCustomer.email);
         return jsonResponse({
+          exists: true,
           foundIn: "shopify",
           customer: shopifyCustomer,
         });
       }
 
-      // 2️ If not in Shopify, check ByDesign
+      // 2️⃣ If not in Shopify, check ByDesign
       const byDesignCustomer = await findCustomerInByDesign(
         email,
         env.BYDESIGN_BASE,
         env.BYDESIGN_API_KEY
       );
+
       if (byDesignCustomer) {
-        // 3️ Auto-create customer in Shopify
+        console.log("✅ Found in ByDesign:", byDesignCustomer.Email);
+
+        // 3️⃣ Auto-create in Shopify
         const createdCustomer = await createCustomerInShopify(
           byDesignCustomer,
           env.SHOPIFY_SHOP,
-          env.SHOPIFY_API_KEY
+          env.SHAPETECH_API_KEY
         );
 
+        console.log("🆕 Created in Shopify:", createdCustomer?.email);
+
         return jsonResponse({
+          exists: true,
           foundIn: "bydesign",
           customer: byDesignCustomer,
           createdInShopify: createdCustomer,
         });
       }
 
-      // 4️ Not found anywhere
-      return jsonResponse({ foundIn: null, customer: null });
+      // 4️⃣ Not found anywhere
+      console.log("❌ Not found in Shopify or ByDesign");
+      return jsonResponse({ exists: false, foundIn: null, customer: null });
     } catch (err) {
+      console.error("💥 Worker error:", err.message);
       return jsonResponse(
-        { foundIn: null, error: err.message },
+        { exists: false, foundIn: null, customer: null, error: err.message },
         500
       );
     }
@@ -119,8 +117,12 @@ async function findCustomerInShopify(email, shop, token) {
     body: JSON.stringify({ query, variables: { query: `email:${email}` } }),
   });
 
-  if (!res.ok) throw new Error(`Shopify lookup failed: ${res.status}`);
+  if (!res.ok) {
+    throw new Error(`Shopify lookup failed: ${res.status}`);
+  }
+
   const json = await res.json();
+  console.log("🔎 Shopify lookup response:", JSON.stringify(json, null, 2));
   return json.data?.customers?.edges?.[0]?.node || null;
 }
 
@@ -139,10 +141,16 @@ async function findCustomerInByDesign(email, base, apiKey) {
     }
   );
 
-  if (!res.ok) return null;
+  if (!res.ok) {
+    console.error("❌ ByDesign lookup failed:", res.status);
+    return null;
+  }
+
   const data = await res.json();
+  console.log("🔎 ByDesign lookup response:", JSON.stringify(data, null, 2));
+
   if (Array.isArray(data) && data.length > 0) {
-    return data.find((c) => c.Email === email) || null;
+    return data.find((c) => c.Email?.toLowerCase() === email.toLowerCase()) || null;
   }
   return null;
 }
@@ -173,16 +181,14 @@ async function createCustomerInShopify(customer, shop, token) {
   });
 
   const json = await res.json();
+  console.log("📝 Shopify create response:", JSON.stringify(json, null, 2));
+
   if (json.data?.customerCreate?.userErrors?.length) {
     throw new Error(
       "Shopify create failed: " +
         JSON.stringify(json.data.customerCreate.userErrors)
     );
   }
+
   return json.data?.customerCreate?.customer || null;
 }
-
-
-
-
-
