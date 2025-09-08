@@ -255,45 +255,48 @@ async function createCustomerInShopify(customer, shop, token) {
 
 // create address in Shopify (Admin API customerAddressCreate)
 async function createCustomerAddressInShopify(customerId, address, shop, token, setAsDefault = false) {
-  const mutation = `
-    mutation customerAddressCreate($customerId: ID!, $address: MailingAddressInput!, $setAsDefault: Boolean) {
-      customerAddressCreate(customerId: $customerId, address: $address, setAsDefault: $setAsDefault) {
-        customerAddress {
-          id
-          address1
-          city
-          province
-          country
-          zip
-          firstName
-          lastName
-        }
-        customerUserErrors {
-          field
-          message
-        }
+ const mutation = `
+  mutation customerAddressCreate($customerId: ID!, $address: MailingAddressInput!, $setAsDefault: Boolean) {
+    customerAddressCreate(customerId: $customerId, address: $address, setAsDefault: $setAsDefault) {
+      address {
+        id
+        address1
+        city
+        province
+        country
+        zip
+        firstName
+        lastName
       }
-    }`;
-
-  const variables = { customerId, address, setAsDefault };
-
-  const res = await fetch(`https://${shop}/admin/api/2025-07/graphql.json`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Shopify-Access-Token": token,
-    },
-    body: JSON.stringify({ query: mutation, variables }),
-  });
-
-  const json = await res.json();
-  console.log("📝 Shopify address create response:", JSON.stringify(json, null, 2));
-
-  if (json.data?.customerAddressCreate?.customerUserErrors?.length) {
-    throw new Error(
-      "Shopify address create failed: " +
-        JSON.stringify(json.data.customerAddressCreate.customerUserErrors)
-    );
+      userErrors {
+        field
+        message
+      }
+    }
   }
-  return json.data?.customerAddressCreate?.customerAddress || null;
+`;
+
+const variables = { customerId, address, setAsDefault };
+
+const res = await fetch(`https://${shop}/admin/api/2025-07/graphql.json`, {
+  method: "POST",
+  headers: {
+    "Content-Type": "application/json",
+    "X-Shopify-Access-Token": token,
+  },
+  body: JSON.stringify({ query: mutation, variables }),
+});
+
+const json = await res.json();
+console.log("📝 Shopify address create response:", JSON.stringify(json, null, 2));
+
+if (json.data?.customerAddressCreate?.userErrors?.length) {
+  throw new Error(
+    "Shopify address create failed: " +
+    JSON.stringify(json.data.customerAddressCreate.userErrors)
+  );
+}
+
+return json.data?.customerAddressCreate?.address || null;
+
 }
