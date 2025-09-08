@@ -8,7 +8,9 @@ export default {
     }
 
     try {
-      // 1) Lookup in Shopify
+      console.log("Checking Shopify for:", email);
+
+      // 1) Shopify lookup
       const shopifyResp = await fetch(
         `https://${env.SHOPIFY_SHOP}/admin/api/2025-01/customers/search.json?query=email:${encodeURIComponent(
           email
@@ -21,20 +23,18 @@ export default {
         }
       );
 
+      console.log("Shopify status:", shopifyResp.status);
+
       if (!shopifyResp.ok) {
         return jsonResponse(
-          {
-            exists: false,
-            foundIn: null,
-            customer: null,
-            error: `Shopify lookup failed: ${shopifyResp.status}`,
-          },
+          { error: `Shopify lookup failed: ${shopifyResp.status}` },
           500
         );
       }
 
       const shopifyData = await shopifyResp.json();
       if (shopifyData.customers?.length > 0) {
+        console.log("Found in Shopify");
         return jsonResponse({
           exists: true,
           foundIn: "shopify",
@@ -42,7 +42,9 @@ export default {
         });
       }
 
-      // 2) Lookup in ByDesign
+      // 2) ByDesign lookup
+      console.log("Checking ByDesign for:", email);
+
       const bydesignResp = await fetch(
         `${env.BYDESIGN_BASE}/VoxxLife/api/users/customer/CustomerLookup`,
         {
@@ -56,19 +58,20 @@ export default {
         }
       );
 
+      console.log("ByDesign status:", bydesignResp.status);
+
       if (!bydesignResp.ok) {
+        const errTxt = await bydesignResp.text();
+        console.log("ByDesign error body:", errTxt);
         return jsonResponse(
-          {
-            exists: false,
-            foundIn: null,
-            customer: null,
-            error: `ByDesign lookup failed: ${bydesignResp.status}`,
-          },
+          { error: `ByDesign lookup failed: ${bydesignResp.status}` },
           500
         );
       }
 
       const bydesignData = await bydesignResp.json();
+      console.log("ByDesign raw response:", bydesignData);
+
       if (!Array.isArray(bydesignData) || bydesignData.length === 0) {
         return jsonResponse({ exists: false, foundIn: null, customer: null });
       }
@@ -80,7 +83,7 @@ export default {
         return jsonResponse({ exists: false, foundIn: null, customer: null });
       }
 
-      // 3) Build Shopify payload from ByDesign data
+      // 3) Build Shopify payload
       const shopifyPayload = {
         customer: {
           first_name: bdCustomer.FirstName || "",
@@ -104,7 +107,8 @@ export default {
         },
       };
 
-      // 4) Create customer in Shopify
+      console.log("Creating customer in Shopify with:", shopifyPayload);
+
       const createResp = await fetch(
         `https://${env.SHOPIFY_SHOP}/admin/api/2025-01/customers.json`,
         {
@@ -117,23 +121,20 @@ export default {
         }
       );
 
+      console.log("Create Shopify status:", createResp.status);
+
       if (!createResp.ok) {
         const errTxt = await createResp.text();
+        console.log("Shopify create error body:", errTxt);
         return jsonResponse(
-          {
-            exists: true,
-            foundIn: "bydesign",
-            customer: bdCustomer,
-            createdInShopify: null,
-            error: `Shopify create failed: ${createResp.status} ${errTxt}`,
-          },
+          { error: `Shopify create failed: ${createResp.status}`, details: errTxt },
           500
         );
       }
 
       const createdCustomer = await createResp.json();
+      console.log("Customer created in Shopify:", createdCustomer);
 
-      // 5) Return final result
       return jsonResponse({
         exists: true,
         foundIn: "bydesign",
@@ -141,6 +142,7 @@ export default {
         createdInShopify: createdCustomer.customer,
       });
     } catch (err) {
+      console.log("Fatal error:", err);
       return jsonResponse({ error: err.message }, 500);
     }
   },
