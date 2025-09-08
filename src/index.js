@@ -23,7 +23,7 @@ export default {
         );
       }
 
-      console.log("Looking up email:", email);
+      console.log(`Looking up email: ${email}`);
 
       // 1) Check Shopify
       const shopifyCustomer = await findCustomerInShopify(
@@ -50,7 +50,7 @@ export default {
       if (byDesignCustomer) {
         console.log("Found in ByDesign:", byDesignCustomer.Email);
 
-        // 3) Create in Shopify with addresses (shipping + billing if available)
+        // 3) Create in Shopify with addresses
         const createdCustomer = await createCustomerInShopify(
           byDesignCustomer,
           env.SHOPIFY_SHOP,
@@ -73,7 +73,12 @@ export default {
     } catch (err) {
       console.error("Worker error:", err?.message || String(err));
       return jsonResponse(
-        { exists: false, foundIn: null, customer: null, error: err?.message || String(err) },
+        {
+          exists: false,
+          foundIn: null,
+          customer: null,
+          error: err?.message || String(err),
+        },
         500
       );
     }
@@ -166,6 +171,20 @@ function countryToCodeV2(str) {
   return undefined;
 }
 
+function normalizeProvince(country, state) {
+  if (!state) return undefined;
+  const s = String(state).trim().toUpperCase();
+  if (countryToCodeV2(country) === "CA") {
+    const caMap = { ONTARIO: "ON", ON: "ON", QC: "QC", QUEBEC: "QC" };
+    return caMap[s] || s;
+  }
+  if (countryToCodeV2(country) === "US") {
+    const usMap = { CALIFORNIA: "CA", "NEW YORK": "NY" };
+    return usMap[s] || s;
+  }
+  return s;
+}
+
 function buildShippingAddress(bd) {
   const anyShip =
     bd.ShipStreet1 || bd.ShipCity || bd.ShipState || bd.ShipPostalCode || bd.ShipCountry;
@@ -177,7 +196,7 @@ function buildShippingAddress(bd) {
     address1: bd.ShipStreet1,
     address2: bd.ShipStreet2,
     city: bd.ShipCity,
-    provinceCode: bd.ShipState,
+    provinceCode: normalizeProvince(bd.ShipCountry, bd.ShipState),
     zip: bd.ShipPostalCode,
     countryCodeV2: countryToCodeV2(bd.ShipCountry),
     phone: bd.Phone1,
@@ -195,7 +214,7 @@ function buildBillingAddress(bd) {
     address1: bd.BillStreet1,
     address2: bd.BillStreet2,
     city: bd.BillCity,
-    provinceCode: bd.BillState,
+    provinceCode: normalizeProvince(bd.BillCountry, bd.BillState),
     zip: bd.BillPostalCode,
     countryCodeV2: countryToCodeV2(bd.BillCountry),
     phone: bd.Phone1,
@@ -267,12 +286,13 @@ async function createCustomerInShopify(bdCustomer, shop, token) {
 
   const errors = json.data?.customerCreate?.userErrors || [];
   if (errors.length) {
-    throw new Error("Shopify create failed: " + JSON.stringify(errors));
+    console.error("❌ Shopify create failed:", JSON.stringify(errors, null, 2));
+    return null;
   }
 
   const created = json.data?.customerCreate?.customer;
 
-  // Set default address to shipping (first we sent), if present
+  // Set default address if present
   const firstAddrId = created?.addresses?.[0]?.id;
   if (created?.id && firstAddrId) {
     try {
