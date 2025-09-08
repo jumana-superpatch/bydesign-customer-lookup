@@ -1,43 +1,30 @@
+/**
+ * Welcome to Cloudflare Workers! This is your first worker.
+ *
+ * - Run `npm run dev` in your terminal to start a development server
+ * - Open a browser tab at http://localhost:8787/ to see your worker in action
+ * - Run `npm run deploy` to publish your worker
+ *
+ * Learn more at https://developers.cloudflare.com/workers/
+ */
+
+// export default {
+// 	async fetch(request, env, ctx) {
+// 		return new Response('Hello World!');
+// 	},
+// };
 export default {
   async fetch(request, env, ctx) {
-    if (request.method === "OPTIONS") {
-      return new Response(null, {
-        status: 204,
-        headers: {
-          "Access-Control-Allow-Origin": "*",
-          "Access-Control-Allow-Methods": "POST, OPTIONS",
-          "Access-Control-Allow-Headers": "Content-Type, Authorization",
-        },
-      });
-    }
-
-    if (request.method !== "POST") {
-      return new Response("Method not allowed", {
-        status: 405,
-        headers: { "Access-Control-Allow-Origin": "*" },
-      });
-    }
-
     try {
-      const { email, shopify_customer_id } = await request.json();
-      if (!email || !shopify_customer_id) {
-        return new Response(
-          JSON.stringify({ success: false, message: "Missing email or shopify_customer_id" }),
-          {
-            status: 400,
-            headers: {
-              "Content-Type": "application/json",
-              "Access-Control-Allow-Origin": "*",
-            },
-          }
-        );
-      }
+      // Parse query param
+      const url = new URL(request.url);
+      const email = url.searchParams.get("email");
 
       // Call ByDesign API
       const byDesignResp = await fetch(
         "https://webapi.securefreedom.com/VoxxLife/api/users/customer/CustomerLookup",
         {
-          method: "POST",
+          method: "POST", 
           headers: {
             "Accept": "application/json",
             "Authorization": `Basic ${env.BYDESIGN_API_KEY}`,
@@ -48,58 +35,21 @@ export default {
       );
 
       const byDesignData = await byDesignResp.json();
-      const customer = Array.isArray(byDesignData)
-        ? byDesignData.find((c) => c.Email === email)
-        : null;
+      const exists =
+        Array.isArray(byDesignData) && byDesignData.some((c) => c.Email === email);
 
-      if (customer) {
-        // Update Shopify Customer
-        const shopifyResp = await fetch(
-          `https://${env.SHOP}/admin/api/2025-01/customers/${shopify_customer_id}.json`,
-          {
-            method: "PUT",
-            headers: {
-              "X-Shopify-Access-Token": env.SHOPIFY_API_KEY,
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              customer: {
-                id: shopify_customer_id,
-                first_name: customer.FirstName,
-                last_name: customer.LastName,
-                phone: customer.Phone,
-                email: customer.Email,
-                addresses: [
-                  {
-                    address1: customer.Address1,
-                    city: customer.City,
-                    province: customer.State,
-                    zip: customer.Zip,
-                    country: customer.Country,
-                  },
-                ],
-              },
-            }),
-          }
-        );
+      const customer = exists ? byDesignData.find((c) => c.Email === email) : null;
 
-        const shopifyResult = await shopifyResp.json();
-
-        return new Response(
-          JSON.stringify({ success: true, updated: true, shopify: shopifyResult }),
-          {
-            status: 200,
-            headers: {
-              "Content-Type": "application/json",
-              "Access-Control-Allow-Origin": "*",
-            },
-          }
-        );
-      }
-
-      // Customer not found in ByDesign
       return new Response(
-        JSON.stringify({ success: true, updated: false, message: "Customer not found in ByDesign" }),
+        JSON.stringify(
+          {
+            exists,
+            email,
+            customer: customer || null,
+          },
+          null,
+          2 // pretty print
+        ),
         {
           status: 200,
           headers: {
@@ -110,7 +60,7 @@ export default {
       );
     } catch (err) {
       return new Response(
-        JSON.stringify({ success: false, error: err.message }),
+        JSON.stringify({ exists: false, error: err.message }, null, 2),
         {
           status: 500,
           headers: {
@@ -122,3 +72,8 @@ export default {
     }
   },
 };
+
+
+
+
+
