@@ -41,7 +41,7 @@ export default {
       const shopifyCustomer = await findCustomerInShopify(
         email,
         env.SHOPIFY_SHOP,
-        env.SHOPIFY_ADMIN_TOKEN
+        env.SHOPIFY_API_KEY
       );
       if (shopifyCustomer) {
         return jsonResponse({
@@ -61,7 +61,7 @@ export default {
         const createdCustomer = await createCustomerInShopify(
           byDesignCustomer,
           env.SHOPIFY_SHOP,
-          env.SHOPIFY_ADMIN_TOKEN
+          env.SHOPIFY_API_KEY
         );
 
         return jsonResponse({
