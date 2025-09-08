@@ -157,39 +157,105 @@ async function findCustomerInByDesign(email, base, apiKey) {
 }
 
 // create customer in Shopify
+// async function createCustomerInShopify(customer, shop, token) {
+// 	const mutation = `mutation customerCreate($input: CustomerInput!) {
+//     customerCreate(input: $input) {
+//       customer { id email firstName lastName }
+//       userErrors { field message }
+//     }
+//   }`;
+
+// 	const input = {
+// 		email: customer.Email,
+// 		firstName: customer.FirstName || "",
+// 		lastName: customer.LastName || "",
+// 		phone: customer.Phone || null,
+// 	};
+
+// 	const res = await fetch(`https://${shop}/admin/api/2025-07/graphql.json`, {
+// 		method: "POST",
+// 		headers: {
+// 			"Content-Type": "application/json",
+// 			"X-Shopify-Access-Token": token,
+// 		},
+// 		body: JSON.stringify({ query: mutation, variables: { input } }),
+// 	});
+
+// 	const json = await res.json();
+// 	console.log("📝 Shopify create response:", JSON.stringify(json, null, 2));
+
+// 	if (json.data?.customerCreate?.userErrors?.length) {
+// 		throw new Error(
+// 			"Shopify create failed: " +
+// 			JSON.stringify(json.data.customerCreate.userErrors)
+// 		);
+// 	}
+
+// 	return json.data?.customerCreate?.customer || null;
+// }
 async function createCustomerInShopify(customer, shop, token) {
-	const mutation = `mutation customerCreate($input: CustomerInput!) {
-    customerCreate(input: $input) {
-      customer { id email firstName lastName }
-      userErrors { field message }
+    const mutation = `mutation customerCreate($input: CustomerInput!) {
+        customerCreate(input: $input) {
+            customer { id email firstName lastName }
+            userErrors { field message }
+        }
+    }`;
+
+    // Map ByDesign address fields to Shopify format
+    const billingAddress = {
+        address1: customer.BillStreet1 || "",
+        city: customer.BillCity || "",
+        province: customer.BillState || "",
+        country: customer.BillCountry || "",
+        zip: customer.BillPostalCode || "",
+        phone: customer.Phone1 || "",
+        firstName: customer.FirstName || "",
+        lastName: customer.LastName || "",
+    };
+
+    const shippingAddress = {
+        address1: customer.ShipStreet1 || "",
+        city: customer.ShipCity || "",
+        province: customer.ShipState || "",
+        country: customer.ShipCountry || "",
+        zip: customer.ShipPostalCode || "",
+        phone: customer.Phone1 || "",
+        firstName: customer.FirstName || "",
+        lastName: customer.LastName || "",
+    };
+
+    // You could combine both or just push one if preferred
+    const addresses = [];
+    if (shippingAddress.address1) addresses.push(shippingAddress);
+    else if (billingAddress.address1) addresses.push(billingAddress);
+
+    const input = {
+        email: customer.Email,
+        firstName: customer.FirstName || "",
+        lastName: customer.LastName || "",
+        phone: customer.Phone1 || null,
+        addresses,
+    };
+
+    const res = await fetch(`https://${shop}/admin/api/2025-07/graphql.json`, {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+            "X-Shopify-Access-Token": token,
+        },
+        body: JSON.stringify({ query: mutation, variables: { input } }),
+    });
+
+    const json = await res.json();
+    console.log("📝 Shopify create response:", JSON.stringify(json, null, 2));
+
+    if (json.data?.customerCreate?.userErrors?.length) {
+        throw new Error(
+            "Shopify create failed: " +
+            JSON.stringify(json.data.customerCreate.userErrors)
+        );
     }
-  }`;
 
-	const input = {
-		email: customer.Email,
-		firstName: customer.FirstName || "",
-		lastName: customer.LastName || "",
-		phone: customer.Phone || null,
-	};
-
-	const res = await fetch(`https://${shop}/admin/api/2025-07/graphql.json`, {
-		method: "POST",
-		headers: {
-			"Content-Type": "application/json",
-			"X-Shopify-Access-Token": token,
-		},
-		body: JSON.stringify({ query: mutation, variables: { input } }),
-	});
-
-	const json = await res.json();
-	console.log("📝 Shopify create response:", JSON.stringify(json, null, 2));
-
-	if (json.data?.customerCreate?.userErrors?.length) {
-		throw new Error(
-			"Shopify create failed: " +
-			JSON.stringify(json.data.customerCreate.userErrors)
-		);
-	}
-
-	return json.data?.customerCreate?.customer || null;
+    return json.data?.customerCreate?.customer || null;
 }
+
