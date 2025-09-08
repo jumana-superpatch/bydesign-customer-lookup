@@ -32,7 +32,7 @@ export default {
       );
 
       if (shopifyCustomer) {
-        console.log("✅ Found in Shopify:", shopifyCustomer.email);
+        console.log("Found in Shopify:", shopifyCustomer.email);
         return jsonResponse({
           exists: true,
           foundIn: "shopify",
@@ -48,16 +48,16 @@ export default {
       );
 
       if (byDesignCustomer) {
-        console.log("✅ Found in ByDesign:", byDesignCustomer.Email);
+        console.log(" Found in ByDesign:", byDesignCustomer.Email);
 
-        // 3️⃣ Auto-create in Shopify
+        // 3️ Auto-create in Shopify
         const createdCustomer = await createCustomerInShopify(
           byDesignCustomer,
           env.SHOPIFY_SHOP,
           env.SHAPETECH_API_KEY
         );
 
-        console.log("🆕 Created in Shopify:", createdCustomer?.email);
+        console.log("Created in Shopify:", createdCustomer?.email);
 
         return jsonResponse({
           exists: true,
@@ -67,11 +67,11 @@ export default {
         });
       }
 
-      // 4️⃣ Not found anywhere
-      console.log("❌ Not found in Shopify or ByDesign");
+      // 4️ Not found anywhere
+      console.log("Not found in Shopify or ByDesign");
       return jsonResponse({ exists: false, foundIn: null, customer: null });
     } catch (err) {
-      console.error("💥 Worker error:", err.message);
+      console.error("Worker error:", err.message);
       return jsonResponse(
         { exists: false, foundIn: null, customer: null, error: err.message },
         500
