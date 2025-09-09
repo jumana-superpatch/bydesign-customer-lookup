@@ -117,7 +117,7 @@ export default {
               shippingAddress,
               env.SHOPIFY_SHOP,
               env.SHAPETECH_API_KEY,
-              true
+              false
             );
             addressesCreated.push(addr);
           }
@@ -221,31 +221,15 @@ async function findCustomerInByDesign(email, base, apiKey) {
 async function createCustomerInShopify(customer, shop, token) {
   const mutation = `mutation customerCreate($input: CustomerInput!) {
     customerCreate(input: $input) {
-      customer { 
-        id 
-        email 
-        firstName 
-        lastName
-        metafields(namespace: "external", first: 5) {
-          edges { node { namespace key value } }
-        }
-      }
+      customer { id email firstName lastName }
       userErrors { field message }
     }
   }`;
-
   const input = {
     email: customer.Email,
     firstName: customer.FirstName || "",
     lastName: customer.LastName || "",
-    metafields: [
-      {
-        namespace: "external",
-        key: "bydesign_id",
-        type: "single_line_text_field",
-        value: String(customer.CustomerDID), // your ByDesign ID
-      },
-    ],
+    // omit phone due to validation issues
   };
 
   const res = await fetch(`https://${shop}/admin/api/2025-07/graphql.json`, {
@@ -262,8 +246,7 @@ async function createCustomerInShopify(customer, shop, token) {
 
   if (json.data?.customerCreate?.userErrors?.length) {
     throw new Error(
-      "Shopify create failed: " +
-        JSON.stringify(json.data.customerCreate.userErrors)
+      "Shopify create failed: " + JSON.stringify(json.data.customerCreate.userErrors)
     );
   }
 
