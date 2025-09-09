@@ -117,7 +117,7 @@ export default {
               shippingAddress,
               env.SHOPIFY_SHOP,
               env.SHAPETECH_API_KEY,
-              false
+              true
             );
             addressesCreated.push(addr);
           }
