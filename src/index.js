@@ -243,7 +243,7 @@ async function createCustomerInShopify(customer, shop, token) {
         namespace: "external",
         key: "bydesign_id",
         type: "single_line_text_field",
-        value: String(customer.CustomerID), // your ByDesign ID
+        value: String(customer.CustomerDID), // your ByDesign ID
       },
     ],
   };
