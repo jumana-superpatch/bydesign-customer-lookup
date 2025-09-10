@@ -28,7 +28,7 @@ export default {
       const shopifyCustomer = await findCustomerInShopify(
         email,
         env.SHOPIFY_SHOP,
-        env.SHAPETECH_API_KEY
+        env.SHAPETECH_ADMIN_API_KEY
       );
 
       if (shopifyCustomer) {
@@ -71,7 +71,7 @@ export default {
         const createdCustomer = await createCustomerInShopify(
           byDesignCustomer,
           env.SHOPIFY_SHOP,
-          env.SHAPETECH_API_KEY
+          env.SHAPETECH_ADMIN_API_KEY
         );
 
         let normalizedAddress = null;
