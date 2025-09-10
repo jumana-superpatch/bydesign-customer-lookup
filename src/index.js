@@ -32,7 +32,7 @@ export default {
       );
 
       if (shopifyCustomer) {
-        console.log("✅ Found in Shopify:", shopifyCustomer.email);
+        console.log("Found in Shopify:", shopifyCustomer.email);
 
         return jsonResponse({
           exists: true,
@@ -66,7 +66,7 @@ export default {
       );
 
       if (byDesignCustomer) {
-        console.log("✅ Found in ByDesign:", byDesignCustomer.Email);
+        console.log("Found in ByDesign:", byDesignCustomer.Email);
 
         const createdCustomer = await createCustomerInShopify(
           byDesignCustomer,
