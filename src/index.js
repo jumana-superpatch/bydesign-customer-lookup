@@ -18,7 +18,12 @@ export default {
       if (!email) {
         console.log("⚠️ useEmail returned undefined");
         return jsonResponse(
-          { exists: false, foundIn: null, customer: null, error: "Missing email" },
+          {
+            exists: false,
+            foundIn: null,
+            customer: null,
+            error: "Missing email",
+          },
           400
         );
       }
@@ -51,7 +56,7 @@ export default {
       if (byDesignCustomer) {
         console.log("Found in ByDesign:", byDesignCustomer.Email);
 
-        // 3️ Auto-create in Shopify (basic)
+        // 3️ Auto-create in Shopify
         const createdCustomer = await createCustomerInShopify(
           byDesignCustomer,
           env.SHOPIFY_SHOP,
@@ -80,7 +85,6 @@ export default {
               zip: byDesignCustomer.BillPostalCode,
               firstName: byDesignCustomer.FirstName,
               lastName: byDesignCustomer.LastName,
-              // phone omitted to avoid errors
             };
 
             const addr = await createCustomerAddressInShopify(
@@ -88,12 +92,12 @@ export default {
               billingAddress,
               env.SHOPIFY_SHOP,
               env.SHAPETECH_API_KEY,
-              false // set billing address as default
+              false 
             );
             addressesCreated.push(addr);
           }
 
-          // Shipping Address (only if different from billing)
+          // Shipping Address
           if (
             byDesignCustomer.ShipStreet1 &&
             byDesignCustomer.ShipCity &&
@@ -132,13 +136,18 @@ export default {
         });
       }
 
-      // 5️ Not found anywhere
+      // 5️ Not found
       console.log("Not found in Shopify or ByDesign");
       return jsonResponse({ exists: false, foundIn: null, customer: null });
     } catch (err) {
       console.error("Worker error:", err.message);
       return jsonResponse(
-        { exists: false, foundIn: null, customer: null, error: err.message },
+        {
+          exists: false,
+          foundIn: null,
+          customer: null,
+          error: err.message,
+        },
         500
       );
     }
@@ -160,18 +169,29 @@ function jsonResponse(data, status = 200) {
 
 // find customer in Shopify
 async function findCustomerInShopify(email, shop, token) {
-  const query = `query customersByEmail($query: String!) {
-    customers(first: 1, query: $query) {
-      edges {
-        node {
-          id
-          email
-          firstName
-          lastName
+  const query = `
+    query customersByEmail($query: String!) {
+      customers(first: 1, query: $query) {
+        edges {
+          node {
+            id
+            email
+            firstName
+            lastName
+            metafields(namespace: "external", first: 5) {
+              edges {
+                node {
+                  namespace
+                  key
+                  value
+                }
+              }
+            }
+          }
         }
       }
     }
-  }`;
+  `;
 
   const res = await fetch(`https://${shop}/admin/api/2025-07/graphql.json`, {
     method: "POST",
@@ -212,27 +232,40 @@ async function findCustomerInByDesign(email, base, apiKey) {
   console.log("🔎 ByDesign lookup response:", JSON.stringify(data, null, 2));
 
   if (Array.isArray(data) && data.length > 0) {
-    return data.find((c) => c.Email?.toLowerCase() === email.toLowerCase()) || null;
+    return (
+      data.find((c) => c.Email?.toLowerCase() === email.toLowerCase()) || null
+    );
   }
   return null;
 }
 
-// create customer in Shopify (basic customerCreate)
+// create customer in Shopify
 async function createCustomerInShopify(customer, shop, token) {
-  const mutation = `mutation customerCreate($input: CustomerInput!) {
-    customerCreate(input: $input) {
-      customer { 
-        id 
-        email 
-        firstName 
-        lastName
-        metafields(namespace: "external", first: 5) {
-          edges { node { namespace key value } }
+  const mutation = `
+    mutation customerCreate($input: CustomerInput!) {
+      customerCreate(input: $input) {
+        customer {
+          id
+          email
+          firstName
+          lastName
+          metafields(namespace: "external", first: 5) {
+            edges {
+              node {
+                namespace
+                key
+                value
+              }
+            }
+          }
+        }
+        userErrors {
+          field
+          message
         }
       }
-      userErrors { field message }
     }
-  }`;
+  `;
 
   const input = {
     email: customer.Email,
@@ -243,7 +276,7 @@ async function createCustomerInShopify(customer, shop, token) {
         namespace: "external",
         key: "bydesign_id",
         type: "single_line_text_field",
-        value: String(customer.CustomerDID), // your ByDesign ID
+        value: String(customer.CustomerDID || ""),
       },
     ],
   };
@@ -270,50 +303,58 @@ async function createCustomerInShopify(customer, shop, token) {
   return json.data?.customerCreate?.customer || null;
 }
 
-// create address in Shopify (Admin API customerAddressCreate)
-async function createCustomerAddressInShopify(customerId, address, shop, token, setAsDefault = false) {
- const mutation = `
-  mutation customerAddressCreate($customerId: ID!, $address: MailingAddressInput!, $setAsDefault: Boolean) {
-    customerAddressCreate(customerId: $customerId, address: $address, setAsDefault: $setAsDefault) {
-      address {
-        id
-        address1
-        city
-        province
-        country
-        zip
-        firstName
-        lastName
-      }
-      userErrors {
-        field
-        message
+// create address in Shopify
+async function createCustomerAddressInShopify(
+  customerId,
+  address,
+  shop,
+  token,
+  setAsDefault = false
+) {
+  const mutation = `
+    mutation customerAddressCreate($customerId: ID!, $address: MailingAddressInput!, $setAsDefault: Boolean) {
+      customerAddressCreate(customerId: $customerId, address: $address, setAsDefault: $setAsDefault) {
+        address {
+          id
+          address1
+          city
+          province
+          country
+          zip
+          firstName
+          lastName
+        }
+        userErrors {
+          field
+          message
+        }
       }
     }
-  }
-`;
+  `;
 
-const variables = { customerId, address, setAsDefault };
+  const variables = { customerId, address, setAsDefault };
 
-const res = await fetch(`https://${shop}/admin/api/2025-07/graphql.json`, {
-  method: "POST",
-  headers: {
-    "Content-Type": "application/json",
-    "X-Shopify-Access-Token": token,
-  },
-  body: JSON.stringify({ query: mutation, variables }),
-});
+  const res = await fetch(`https://${shop}/admin/api/2025-07/graphql.json`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Shopify-Access-Token": token,
+    },
+    body: JSON.stringify({ query: mutation, variables }),
+  });
 
-const json = await res.json();
-console.log("📝 Shopify address create response:", JSON.stringify(json, null, 2));
-
-if (json.data?.customerAddressCreate?.userErrors?.length) {
-  throw new Error(
-    "Shopify address create failed: " +
-    JSON.stringify(json.data.customerAddressCreate.userErrors)
+  const json = await res.json();
+  console.log(
+    "📝 Shopify address create response:",
+    JSON.stringify(json, null, 2)
   );
-}
 
-return json.data?.customerAddressCreate?.address || null;
+  if (json.data?.customerAddressCreate?.userErrors?.length) {
+    throw new Error(
+      "Shopify address create failed: " +
+        JSON.stringify(json.data.customerAddressCreate.userErrors)
+    );
+  }
 
+  return json.data?.customerAddressCreate?.address || null;
 }
