@@ -88,7 +88,7 @@ export default {
               billingAddress,
               env.SHOPIFY_SHOP,
               env.SHAPETECH_API_KEY,
-              true // set billing address as default
+              false // set billing address as default
             );
             addressesCreated.push(addr);
           }
@@ -117,7 +117,7 @@ export default {
               shippingAddress,
               env.SHOPIFY_SHOP,
               env.SHAPETECH_API_KEY,
-              false
+              true
             );
             addressesCreated.push(addr);
           }
