@@ -16,21 +16,15 @@ export default {
       const email = url.searchParams.get("email");
 
       if (!email) {
-        console.log("⚠️ useEmail returned undefined");
         return jsonResponse(
-          {
-            exists: false,
-            foundIn: null,
-            customer: null,
-            error: "Missing email",
-          },
+          { exists: false, foundIn: null, customer: null, error: "Missing email" },
           400
         );
       }
 
       console.log(`Looking up email: ${email}`);
 
-      // 1️ Check in Shopify
+      // 1. Check in Shopify
       const shopifyCustomer = await findCustomerInShopify(
         email,
         env.SHOPIFY_SHOP,
@@ -38,15 +32,33 @@ export default {
       );
 
       if (shopifyCustomer) {
-        console.log("Found in Shopify:", shopifyCustomer.email);
+        console.log("✅ Found in Shopify:", shopifyCustomer.email);
+
         return jsonResponse({
           exists: true,
           foundIn: "shopify",
-          customer: shopifyCustomer,
+          customer: {
+            id: shopifyCustomer.id,
+            email: shopifyCustomer.email,
+            firstName: shopifyCustomer.firstName,
+            lastName: shopifyCustomer.lastName,
+            metafields: shopifyCustomer.metafields,
+            address: shopifyCustomer.defaultAddress
+              ? {
+                  address1: shopifyCustomer.defaultAddress.address1,
+                  city: shopifyCustomer.defaultAddress.city,
+                  province: shopifyCustomer.defaultAddress.province,
+                  country: shopifyCustomer.defaultAddress.country,
+                  zip: shopifyCustomer.defaultAddress.zip,
+                  firstName: shopifyCustomer.defaultAddress.firstName,
+                  lastName: shopifyCustomer.defaultAddress.lastName,
+                }
+              : null,
+          },
         });
       }
 
-      // 2️ If not in Shopify, check ByDesign
+      // 2. If not in Shopify, check ByDesign
       const byDesignCustomer = await findCustomerInByDesign(
         email,
         env.BYDESIGN_BASE,
@@ -54,100 +66,54 @@ export default {
       );
 
       if (byDesignCustomer) {
-        console.log("Found in ByDesign:", byDesignCustomer.Email);
+        console.log("✅ Found in ByDesign:", byDesignCustomer.Email);
 
-        // 3️ Auto-create in Shopify
         const createdCustomer = await createCustomerInShopify(
           byDesignCustomer,
           env.SHOPIFY_SHOP,
           env.SHAPETECH_API_KEY
         );
 
-        console.log("Created in Shopify:", createdCustomer?.email);
-
-        let addressesCreated = [];
-
-        // 4️ Create addresses
-        if (createdCustomer?.id) {
-          // Billing Address
-          if (
-            byDesignCustomer.BillStreet1 &&
-            byDesignCustomer.BillCity &&
-            byDesignCustomer.BillState &&
-            byDesignCustomer.BillCountry &&
-            byDesignCustomer.BillPostalCode
-          ) {
-            const billingAddress = {
-              address1: byDesignCustomer.BillStreet1,
-              city: byDesignCustomer.BillCity,
-              province: byDesignCustomer.BillState,
-              country: byDesignCustomer.BillCountry,
-              zip: byDesignCustomer.BillPostalCode,
-              firstName: byDesignCustomer.FirstName,
-              lastName: byDesignCustomer.LastName,
-            };
-
-            const addr = await createCustomerAddressInShopify(
-              createdCustomer.id,
-              billingAddress,
-              env.SHOPIFY_SHOP,
-              env.SHAPETECH_API_KEY,
-              false 
-            );
-            addressesCreated.push(addr);
-          }
-
-          // Shipping Address
-          if (
-            byDesignCustomer.ShipStreet1 &&
-            byDesignCustomer.ShipCity &&
-            byDesignCustomer.ShipState &&
-            byDesignCustomer.ShipCountry &&
-            byDesignCustomer.ShipPostalCode &&
-            byDesignCustomer.ShipStreet1 !== byDesignCustomer.BillStreet1
-          ) {
-            const shippingAddress = {
-              address1: byDesignCustomer.ShipStreet1,
-              city: byDesignCustomer.ShipCity,
-              province: byDesignCustomer.ShipState,
-              country: byDesignCustomer.ShipCountry,
-              zip: byDesignCustomer.ShipPostalCode,
-              firstName: byDesignCustomer.FirstName,
-              lastName: byDesignCustomer.LastName,
-            };
-
-            const addr = await createCustomerAddressInShopify(
-              createdCustomer.id,
-              shippingAddress,
-              env.SHOPIFY_SHOP,
-              env.SHAPETECH_API_KEY,
-              true
-            );
-            addressesCreated.push(addr);
-          }
+        let normalizedAddress = null;
+        if (
+          byDesignCustomer.ShipStreet1 &&
+          byDesignCustomer.ShipCity &&
+          byDesignCustomer.ShipState &&
+          byDesignCustomer.ShipCountry &&
+          byDesignCustomer.ShipPostalCode
+        ) {
+          normalizedAddress = {
+            address1: byDesignCustomer.ShipStreet1,
+            city: byDesignCustomer.ShipCity,
+            province: byDesignCustomer.ShipState,
+            country: byDesignCustomer.ShipCountry,
+            zip: byDesignCustomer.ShipPostalCode,
+            firstName: byDesignCustomer.FirstName,
+            lastName: byDesignCustomer.LastName,
+          };
         }
 
         return jsonResponse({
           exists: true,
           foundIn: "bydesign",
-          customer: byDesignCustomer,
+          customer: {
+            id: createdCustomer?.id || null,
+            email: byDesignCustomer.Email,
+            firstName: byDesignCustomer.FirstName,
+            lastName: byDesignCustomer.LastName,
+            metafields: createdCustomer?.metafields || null,
+            address: normalizedAddress,
+          },
           createdInShopify: createdCustomer,
-          addressesCreated,
         });
       }
 
-      // 5️ Not found
-      console.log("Not found in Shopify or ByDesign");
+      // 3. Not found anywhere
       return jsonResponse({ exists: false, foundIn: null, customer: null });
     } catch (err) {
       console.error("Worker error:", err.message);
       return jsonResponse(
-        {
-          exists: false,
-          foundIn: null,
-          customer: null,
-          error: err.message,
-        },
+        { exists: false, foundIn: null, customer: null, error: err.message },
         500
       );
     }
@@ -156,7 +122,6 @@ export default {
 
 // ---------- Helpers ----------
 
-// send JSON with CORS
 function jsonResponse(data, status = 200) {
   return new Response(JSON.stringify(data, null, 2), {
     status,
@@ -178,6 +143,15 @@ async function findCustomerInShopify(email, shop, token) {
             email
             firstName
             lastName
+            defaultAddress {
+              address1
+              city
+              province
+              country
+              zip
+              firstName
+              lastName
+            }
             metafields(namespace: "external", first: 5) {
               edges {
                 node {
@@ -202,12 +176,9 @@ async function findCustomerInShopify(email, shop, token) {
     body: JSON.stringify({ query, variables: { query: `email:${email}` } }),
   });
 
-  if (!res.ok) {
-    throw new Error(`Shopify lookup failed: ${res.status}`);
-  }
+  if (!res.ok) throw new Error(`Shopify lookup failed: ${res.status}`);
 
   const json = await res.json();
-  console.log("🔎 Shopify lookup response:", JSON.stringify(json, null, 2));
   return json.data?.customers?.edges?.[0]?.node || null;
 }
 
@@ -223,18 +194,11 @@ async function findCustomerInByDesign(email, base, apiKey) {
     body: JSON.stringify({ Email: email }),
   });
 
-  if (!res.ok) {
-    console.error("❌ ByDesign lookup failed:", res.status);
-    return null;
-  }
+  if (!res.ok) return null;
 
   const data = await res.json();
-  console.log("🔎 ByDesign lookup response:", JSON.stringify(data, null, 2));
-
   if (Array.isArray(data) && data.length > 0) {
-    return (
-      data.find((c) => c.Email?.toLowerCase() === email.toLowerCase()) || null
-    );
+    return data.find((c) => c.Email?.toLowerCase() === email.toLowerCase()) || null;
   }
   return null;
 }
@@ -291,70 +255,9 @@ async function createCustomerInShopify(customer, shop, token) {
   });
 
   const json = await res.json();
-  console.log("📝 Shopify create response:", JSON.stringify(json, null, 2));
-
   if (json.data?.customerCreate?.userErrors?.length) {
-    throw new Error(
-      "Shopify create failed: " +
-        JSON.stringify(json.data.customerCreate.userErrors)
-    );
+    throw new Error(JSON.stringify(json.data.customerCreate.userErrors));
   }
 
   return json.data?.customerCreate?.customer || null;
-}
-
-// create address in Shopify
-async function createCustomerAddressInShopify(
-  customerId,
-  address,
-  shop,
-  token,
-  setAsDefault = false
-) {
-  const mutation = `
-    mutation customerAddressCreate($customerId: ID!, $address: MailingAddressInput!, $setAsDefault: Boolean) {
-      customerAddressCreate(customerId: $customerId, address: $address, setAsDefault: $setAsDefault) {
-        address {
-          id
-          address1
-          city
-          province
-          country
-          zip
-          firstName
-          lastName
-        }
-        userErrors {
-          field
-          message
-        }
-      }
-    }
-  `;
-
-  const variables = { customerId, address, setAsDefault };
-
-  const res = await fetch(`https://${shop}/admin/api/2025-07/graphql.json`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Shopify-Access-Token": token,
-    },
-    body: JSON.stringify({ query: mutation, variables }),
-  });
-
-  const json = await res.json();
-  console.log(
-    "📝 Shopify address create response:",
-    JSON.stringify(json, null, 2)
-  );
-
-  if (json.data?.customerAddressCreate?.userErrors?.length) {
-    throw new Error(
-      "Shopify address create failed: " +
-        JSON.stringify(json.data.customerAddressCreate.userErrors)
-    );
-  }
-
-  return json.data?.customerAddressCreate?.address || null;
 }
