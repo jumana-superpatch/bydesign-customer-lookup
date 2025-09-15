@@ -1,153 +1,157 @@
 export default {
-	async fetch(request, env, ctx) {
-		if (request.method === "OPTIONS") {
-			return new Response(null, {
-				status: 204,
-				headers: {
-					"Access-Control-Allow-Origin": "*",
-					"Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-					"Access-Control-Allow-Headers": "*",
-				},
-			});
-		}
+  async fetch(request, env) {
+    if (request.method === "OPTIONS") {
+      return new Response(null, {
+        status: 204,
+        headers: {
+          "Access-Control-Allow-Origin": "*",
+          "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+          "Access-Control-Allow-Headers": "*",
+        },
+      });
+    }
 
-		try {
-			const url = new URL(request.url);
+    try {
+      const url = new URL(request.url);
 
-			// === CASE 1: CUSTOMER LOOKUP BY EMAIL ===
-			if (url.pathname === "/lookup-customer") {
-				const email = url.searchParams.get("email");
-				if (!email) {
-					return jsonResponse({ did: null, error: "Missing email" }, 400);
-				}
+      // === CASE 1: CUSTOMER LOOKUP ===
+      if (url.pathname === "/lookup-customer") {
+        const email = url.searchParams.get("email");
+        if (!email) {
+          return jsonResponse({ did: null, error: "Missing email" }, 400);
+        }
 
-				console.log(`Looking up email: ${email}`);
+        console.log(`Looking up email: ${email}`);
 
-				// 1. Check Shopify
-				const shopifyCustomer = await findCustomerInShopify(
-					email,
-					env.SHOPIFY_SHOP,
-					env.SHAPETECH_ADMIN_API_KEY
-				);
+        // 1. Check Shopify
+        const shopifyCustomer = await findCustomerInShopify(
+          email,
+          env.SHOPIFY_SHOP,
+          env.SHAPETECH_ADMIN_API_KEY
+        );
 
-				if (shopifyCustomer) {
-					console.log("Found in Shopify:", shopifyCustomer.email);
+        if (shopifyCustomer) {
+          const did =
+            shopifyCustomer.metafields?.edges?.find(
+              (edge) =>
+                edge.node.namespace === "external" &&
+                edge.node.key === "bydesign_id"
+            )?.node.value || null;
 
-					const did =
-						shopifyCustomer.metafields?.edges?.find(
-							(edge) =>
-								edge.node.namespace === "external" &&
-								edge.node.key === "bydesign_id"
-						)?.node.value || null;
+          return jsonResponse({ did });
+        }
 
-					return jsonResponse({ did });
-				}
+        // 2. Check ByDesign
+        const byDesignCustomer = await findCustomerInByDesign(
+          email,
+          env.BYDESIGN_BASE,
+          env.BYDESIGN_API_KEY
+        );
 
-				// 2. If not in Shopify, check ByDesign
-				const byDesignCustomer = await findCustomerInByDesign(
-					email,
-					env.BYDESIGN_BASE,
-					env.BYDESIGN_API_KEY
-				);
+        if (byDesignCustomer) {
+          const createdCustomer = await createCustomerInShopify(
+            byDesignCustomer,
+            env.SHOPIFY_SHOP,
+            env.SHAPETECH_ADMIN_API_KEY
+          );
 
-				if (byDesignCustomer) {
-					console.log("Found in ByDesign:", byDesignCustomer.Email);
+          if (
+            byDesignCustomer.ShipStreet1 &&
+            byDesignCustomer.ShipCity &&
+            byDesignCustomer.ShipState &&
+            byDesignCustomer.ShipCountry &&
+            byDesignCustomer.ShipPostalCode
+          ) {
+            await createCustomerAddressInShopify(
+              createdCustomer.id,
+              byDesignCustomer,
+              env.SHOPIFY_SHOP,
+              env.SHAPETECH_ADMIN_API_KEY
+            );
+          }
 
-					// Create Shopify customer
-					const createdCustomer = await createCustomerInShopify(
-						byDesignCustomer,
-						env.SHOPIFY_SHOP,
-						env.SHAPETECH_ADMIN_API_KEY
-					);
+          return jsonResponse({
+            did: String(byDesignCustomer.CustomerDID || ""),
+          });
+        }
 
-					// Create address in Shopify if ByDesign has one
-					if (
-						byDesignCustomer.ShipStreet1 &&
-						byDesignCustomer.ShipCity &&
-						byDesignCustomer.ShipState &&
-						byDesignCustomer.ShipCountry &&
-						byDesignCustomer.ShipPostalCode
-					) {
-						await createCustomerAddressInShopify(
-							createdCustomer.id,
-							byDesignCustomer,
-							env.SHOPIFY_SHOP,
-							env.SHAPETECH_ADMIN_API_KEY
-						);
-					}
+        return jsonResponse({ did: null });
+      }
 
-					return jsonResponse({
-						did: String(byDesignCustomer.CustomerDID || ""),
-					});
-				}
+      // === CASE 2: REP LOOKUP ===
+      if (url.pathname === "/lookup-rep") {
+        const rep = url.searchParams.get("rep");
+        if (!rep) {
+          return jsonResponse({ error: "Missing rep parameter" }, 400);
+        }
 
-				// 3. Not found anywhere
-				return jsonResponse({ did: null });
-			}
+        let repData = null;
+        try {
+          if (/^\d+$/.test(rep)) {
+            // numeric RepDID
+            const resp = await fetch(
+              `${env.BYDESIGN_BASE}/VoxxLifeSandbox/api/User/Rep/${rep}/info`,
+              {
+                headers: {
+                  Authorization: `Basic ${env.BYDESIGN_API_KEY}`,
+                  Accept: "application/json",
+                },
+              }
+            );
+            if (resp.ok) repData = await resp.json();
+          } else {
+            // repURL
+            const resp = await fetch(
+              `${env.BYDESIGN_BASE}/VoxxLifeSandbox/api/rep/PublicInfo/GetInfo?repURL=${encodeURIComponent(
+                rep
+              )}`,
+              {
+                headers: {
+                  Authorization: `Basic ${env.BYDESIGN_API_KEY}`,
+                  Accept: "application/json",
+                },
+              }
+            );
+            if (resp.ok) repData = await resp.json();
+          }
 
-			// === CASE 2: REP LOOKUP BY REP PARAM ===
-			if (url.pathname === "/lookup-rep") {
-				const rep = url.searchParams.get("rep");
-				if (!rep) {
-					return jsonResponse({ error: "Missing rep parameter" }, 400);
-				}
+          if (!repData) {
+            return jsonResponse({ error: "Rep not found" }, 404);
+          }
 
-				let repData = null;
+          return jsonResponse({
+            RepDID: repData.RepDID || null,
+            DisplayName:
+              repData.DisplayName ||
+              [repData.FirstName, repData.LastName].filter(Boolean).join(" ") ||
+              null,
+          });
+        } catch (err) {
+          console.error("Rep lookup failed:", err);
+          return jsonResponse({ error: "Lookup error" }, 500);
+        }
+      }
 
-				try {
-					if (/^\d+$/.test(rep)) {
-						// Case 1: numeric RepDID
-						const resp = await fetch(`${env.BYDESIGN_BASE}/VoxxLifeSandbox/api/User/Rep/${rep}/info`, {
-							headers: {
-								Authorization: `Basic ${env.BYDESIGN_API_KEY}`,
-								Accept: "application/json",
-							},
-						});
-						if (resp.ok) repData = await resp.json();
-					} else {
-						// Case 2: rep URL/username
-						const resp = await fetch(`${env.BYDESIGN_BASE}/VoxxLifeSandbox/api/rep/PublicInfo/GetInfo?repURL=${encodeURIComponent(rep)}`, {
-							headers: {
-								Authorization: `Basic ${env.BYDESIGN_API_KEY}`,
-								Accept: "application/json",
-							},
-						});
-						if (resp.ok) repData = await resp.json();
-					}
-
-					if (!repData) {
-						return jsonResponse({ error: "Rep not found" }, 404);
-					}
-
-					return jsonResponse({
-						RepDID: repData.RepDID || null,
-						DisplayName: repData.DisplayName || repData.FirstName + " " + repData.LastName || null,
-					});
-				} catch (err) {
-					console.error("Rep lookup failed:", err);
-					return jsonResponse({ error: "Lookup error" }, 500);
-				}
-			}
-
-			// Default response
-			return jsonResponse({ error: "Unknown endpoint" }, 404);
-		} catch (err) {
-			console.error("Worker error:", err.message);
-			return jsonResponse({ error: err.message }, 500);
-		}
-	},
+      // Unknown endpoint
+      return jsonResponse({ error: "Unknown endpoint" }, 404);
+    } catch (err) {
+      console.error("Worker error:", err.message);
+      return jsonResponse({ error: err.message }, 500);
+    }
+  },
 };
 
 // ---------- Helpers ----------
 function jsonResponse(data, status = 200) {
-	return new Response(JSON.stringify(data, null, 2), {
-		status,
-		headers: {
-			"Content-Type": "application/json",
-			"Access-Control-Allow-Origin": "*",
-		},
-	});
+  return new Response(JSON.stringify(data, null, 2), {
+    status,
+    headers: {
+      "Content-Type": "application/json",
+      "Access-Control-Allow-Origin": "*",
+    },
+  });
 }
+
 
 async function findCustomerInShopify(email, shop, token) {
 	const query = `
