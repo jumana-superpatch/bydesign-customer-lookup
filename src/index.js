@@ -85,11 +85,9 @@ export default {
 					return jsonResponse({ error: "Missing rep parameter" }, 400);
 				}
 
-				let repData = null;
-
 				try {
-					// Always try /User/Rep/{rep}/info first
-					let resp = await fetch(
+					// 1. Call /api/User/Rep/{rep}/info
+					const repInfoResp = await fetch(
 						`${env.BYDESIGN_BASE}/VoxxLifeSandbox/api/User/Rep/${encodeURIComponent(rep)}/info`,
 						{
 							headers: {
@@ -99,12 +97,16 @@ export default {
 						}
 					);
 
-					if (resp.ok) {
-						repData = await resp.json();
-					} else {
-						// Fallback → PublicInfo
+					let repData = {};
+					if (repInfoResp.ok) {
+						repData = await repInfoResp.json();
+					}
+
+					// 2. If RepDID found → fetch PublicInfo
+					let repPublic = {};
+					if (repData?.RepDID) {
 						const pubResp = await fetch(
-							`${env.BYDESIGN_BASE}/VoxxLifeSandbox/api/rep/PublicInfo/GetInfo?repURL=${encodeURIComponent(rep)}`,
+							`${env.BYDESIGN_BASE}/VoxxLifeSandbox/api/rep/PublicInfo/GetInfo?repDID=${encodeURIComponent(repData.RepDID)}`,
 							{
 								headers: {
 									Authorization: `Basic ${env.BYDESIGN_API_KEY}`,
@@ -112,25 +114,43 @@ export default {
 								},
 							}
 						);
-						if (pubResp.ok) repData = await pubResp.json();
+						if (pubResp.ok) {
+							repPublic = await pubResp.json();
+						}
 					}
 
-					if (!repData) {
+					// 3. Merge results
+					const merged = {
+						...repData,
+						...repPublic,
+					};
+
+					// Normalize a few fields like in PHP
+					if (repData?.RenewalDate) {
+						merged.RenewalDate = new Date(repData.RenewalDate).toISOString();
+					}
+					if (repPublic?.DisplayName) {
+						merged.DisplayName = repPublic.DisplayName;
+						merged.DisplayNameHeader = repPublic.DisplayNameHeader;
+					}
+					if (repData?.URL) {
+						merged.SiteUrl = repData.URL;
+					}
+					if (repData?.RankTypeID) {
+						merged.LifetimeRankID = repData.RankTypeID;
+					}
+
+					if (!merged?.RepDID) {
 						return jsonResponse({ error: "Rep not found" }, 404);
 					}
 
-					return jsonResponse({
-						RepDID: repData.RepDID || null,
-						DisplayName:
-							repData.DisplayName ||
-							[repData.FirstName, repData.LastName].filter(Boolean).join(" ") ||
-							null,
-					});
+					return jsonResponse(merged);
 				} catch (err) {
 					console.error("Rep lookup failed:", err);
 					return jsonResponse({ error: "Lookup error" }, 500);
 				}
 			}
+
 
 			// Unknown endpoint
 			return jsonResponse({ error: "Unknown endpoint" }, 404);
