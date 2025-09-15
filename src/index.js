@@ -188,7 +188,7 @@ async function findCustomerInShopify(email, shop, token) {
 }
 
 async function findCustomerInByDesign(email, base, apiKey) {
-  const res = await fetch(`${base}/VoxxLifeSandbox/api/users/customer/CustomerLookup`, {
+  const res = await fetch(`${base}/VoxxLife/api/users/customer/CustomerLookup`, {
     method: "POST",
     headers: {
       Accept: "application/json",
