@@ -13,7 +13,7 @@ export default {
 
     try {
       const url = new URL(request.url);
-
+	  console.log(url.pathname);
       // === CASE 1: CUSTOMER LOOKUP ===
       if (url.pathname === "/lookup-customer") {
         const email = url.searchParams.get("email");
