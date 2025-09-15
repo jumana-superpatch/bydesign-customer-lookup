@@ -1,155 +1,155 @@
 export default {
-  async fetch(request, env) {
-    if (request.method === "OPTIONS") {
-      return new Response(null, {
-        status: 204,
-        headers: {
-          "Access-Control-Allow-Origin": "*",
-          "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-          "Access-Control-Allow-Headers": "*",
-        },
-      });
-    }
+	async fetch(request, env) {
+		if (request.method === "OPTIONS") {
+			return new Response(null, {
+				status: 204,
+				headers: {
+					"Access-Control-Allow-Origin": "*",
+					"Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+					"Access-Control-Allow-Headers": "*",
+				},
+			});
+		}
 
-    try {
-      const url = new URL(request.url);
-	  console.log(url.pathname);
-      // === CASE 1: CUSTOMER LOOKUP ===
-      if (url.pathname === "/lookup-customer") {
-        const email = url.searchParams.get("email");
-        if (!email) {
-          return jsonResponse({ did: null, error: "Missing email" }, 400);
-        }
+		try {
+			const url = new URL(request.url);
+			console.log(url.pathname);
+			// === CASE 1: CUSTOMER LOOKUP ===
+			if (url.pathname === "/lookup-customer") {
+				const email = url.searchParams.get("email");
+				if (!email) {
+					return jsonResponse({ did: null, error: "Missing email" }, 400);
+				}
 
-        console.log(`Looking up email: ${email}`);
+				console.log(`Looking up email: ${email}`);
 
-        // 1. Check Shopify
-        const shopifyCustomer = await findCustomerInShopify(
-          email,
-          env.SHOPIFY_SHOP,
-          env.SHAPETECH_ADMIN_API_KEY
-        );
+				// 1. Check Shopify
+				const shopifyCustomer = await findCustomerInShopify(
+					email,
+					env.SHOPIFY_SHOP,
+					env.SHAPETECH_ADMIN_API_KEY
+				);
 
-        if (shopifyCustomer) {
-          const did =
-            shopifyCustomer.metafields?.edges?.find(
-              (edge) =>
-                edge.node.namespace === "external" &&
-                edge.node.key === "bydesign_id"
-            )?.node.value || null;
+				if (shopifyCustomer) {
+					const did =
+						shopifyCustomer.metafields?.edges?.find(
+							(edge) =>
+								edge.node.namespace === "external" &&
+								edge.node.key === "bydesign_id"
+						)?.node.value || null;
 
-          return jsonResponse({ did });
-        }
+					return jsonResponse({ did });
+				}
 
-        // 2. Check ByDesign
-        const byDesignCustomer = await findCustomerInByDesign(
-          email,
-          env.BYDESIGN_BASE,
-          env.BYDESIGN_API_KEY
-        );
+				// 2. Check ByDesign
+				const byDesignCustomer = await findCustomerInByDesign(
+					email,
+					env.BYDESIGN_BASE,
+					env.BYDESIGN_API_KEY
+				);
 
-        if (byDesignCustomer) {
-          const createdCustomer = await createCustomerInShopify(
-            byDesignCustomer,
-            env.SHOPIFY_SHOP,
-            env.SHAPETECH_ADMIN_API_KEY
-          );
+				if (byDesignCustomer) {
+					const createdCustomer = await createCustomerInShopify(
+						byDesignCustomer,
+						env.SHOPIFY_SHOP,
+						env.SHAPETECH_ADMIN_API_KEY
+					);
 
-          if (
-            byDesignCustomer.ShipStreet1 &&
-            byDesignCustomer.ShipCity &&
-            byDesignCustomer.ShipState &&
-            byDesignCustomer.ShipCountry &&
-            byDesignCustomer.ShipPostalCode
-          ) {
-            await createCustomerAddressInShopify(
-              createdCustomer.id,
-              byDesignCustomer,
-              env.SHOPIFY_SHOP,
-              env.SHAPETECH_ADMIN_API_KEY
-            );
-          }
+					if (
+						byDesignCustomer.ShipStreet1 &&
+						byDesignCustomer.ShipCity &&
+						byDesignCustomer.ShipState &&
+						byDesignCustomer.ShipCountry &&
+						byDesignCustomer.ShipPostalCode
+					) {
+						await createCustomerAddressInShopify(
+							createdCustomer.id,
+							byDesignCustomer,
+							env.SHOPIFY_SHOP,
+							env.SHAPETECH_ADMIN_API_KEY
+						);
+					}
 
-          return jsonResponse({
-            did: String(byDesignCustomer.CustomerDID || ""),
-          });
-        }
+					return jsonResponse({
+						did: String(byDesignCustomer.CustomerDID || ""),
+					});
+				}
 
-        return jsonResponse({ did: null });
-      }
+				return jsonResponse({ did: null });
+			}
 
-      // === CASE 2: REP LOOKUP ===
-      if (url.pathname === "/lookup-rep") {
-        const rep = url.searchParams.get("rep");
-        if (!rep) {
-          return jsonResponse({ error: "Missing rep parameter" }, 400);
-        }
+			// === CASE 2: REP LOOKUP ===
+			if (url.pathname === "/lookup-rep") {
+				const rep = url.searchParams.get("rep");
+				if (!rep) {
+					return jsonResponse({ error: "Missing rep parameter" }, 400);
+				}
 
-        let repData = null;
-        try {
-          if (/^\d+$/.test(rep)) {
-            // numeric RepDID
-            const resp = await fetch(
-              `${env.BYDESIGN_BASE}/VoxxLifeSandbox/api/User/Rep/${rep}/info`,
-              {
-                headers: {
-                  Authorization: `Basic ${env.BYDESIGN_API_KEY}`,
-                  Accept: "application/json",
-                },
-              }
-            );
-            if (resp.ok) repData = await resp.json();
-          } else {
-            // repURL
-            const resp = await fetch(
-              `${env.BYDESIGN_BASE}/VoxxLifeSandbox/api/rep/PublicInfo/GetInfo?repURL=${encodeURIComponent(
-                rep
-              )}`,
-              {
-                headers: {
-                  Authorization: `Basic ${env.BYDESIGN_API_KEY}`,
-                  Accept: "application/json",
-                },
-              }
-            );
-            if (resp.ok) repData = await resp.json();
-          }
+				let repData = null;
 
-          if (!repData) {
-            return jsonResponse({ error: "Rep not found" }, 404);
-          }
+				try {
+					// Always try /User/Rep/{rep}/info first
+					let resp = await fetch(
+						`${env.BYDESIGN_BASE}/VoxxLifeSandbox/api/User/Rep/${encodeURIComponent(rep)}/info`,
+						{
+							headers: {
+								Authorization: `Basic ${env.BYDESIGN_API_KEY}`,
+								Accept: "application/json",
+							},
+						}
+					);
 
-          return jsonResponse({
-            RepDID: repData.RepDID || null,
-            DisplayName:
-              repData.DisplayName ||
-              [repData.FirstName, repData.LastName].filter(Boolean).join(" ") ||
-              null,
-          });
-        } catch (err) {
-          console.error("Rep lookup failed:", err);
-          return jsonResponse({ error: "Lookup error" }, 500);
-        }
-      }
+					if (resp.ok) {
+						repData = await resp.json();
+					} else {
+						// Fallback → PublicInfo
+						const pubResp = await fetch(
+							`${env.BYDESIGN_BASE}/VoxxLifeSandbox/api/rep/PublicInfo/GetInfo?repURL=${encodeURIComponent(rep)}`,
+							{
+								headers: {
+									Authorization: `Basic ${env.BYDESIGN_API_KEY}`,
+									Accept: "application/json",
+								},
+							}
+						);
+						if (pubResp.ok) repData = await pubResp.json();
+					}
 
-      // Unknown endpoint
-      return jsonResponse({ error: "Unknown endpoint" }, 404);
-    } catch (err) {
-      console.error("Worker error:", err.message);
-      return jsonResponse({ error: err.message }, 500);
-    }
-  },
+					if (!repData) {
+						return jsonResponse({ error: "Rep not found" }, 404);
+					}
+
+					return jsonResponse({
+						RepDID: repData.RepDID || null,
+						DisplayName:
+							repData.DisplayName ||
+							[repData.FirstName, repData.LastName].filter(Boolean).join(" ") ||
+							null,
+					});
+				} catch (err) {
+					console.error("Rep lookup failed:", err);
+					return jsonResponse({ error: "Lookup error" }, 500);
+				}
+			}
+
+			// Unknown endpoint
+			return jsonResponse({ error: "Unknown endpoint" }, 404);
+		} catch (err) {
+			console.error("Worker error:", err.message);
+			return jsonResponse({ error: err.message }, 500);
+		}
+	},
 };
 
 // ---------- Helpers ----------
 function jsonResponse(data, status = 200) {
-  return new Response(JSON.stringify(data, null, 2), {
-    status,
-    headers: {
-      "Content-Type": "application/json",
-      "Access-Control-Allow-Origin": "*",
-    },
-  });
+	return new Response(JSON.stringify(data, null, 2), {
+		status,
+		headers: {
+			"Content-Type": "application/json",
+			"Access-Control-Allow-Origin": "*",
+		},
+	});
 }
 
 
