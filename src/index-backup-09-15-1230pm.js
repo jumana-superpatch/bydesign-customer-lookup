@@ -13,137 +13,83 @@ export default {
 
     try {
       const url = new URL(request.url);
+      const email = url.searchParams.get("email");
 
-      // === CASE 1: CUSTOMER LOOKUP BY EMAIL ===
-      if (url.pathname === "/lookup-customer") {
-        const email = url.searchParams.get("email");
-        if (!email) {
-          return jsonResponse({ did: null, error: "Missing email" }, 400);
-        }
+      if (!email) {
+        return jsonResponse({ did: null, error: "Missing email" }, 400);
+      }
 
-        console.log(`Looking up email: ${email}`);
+      console.log(`Looking up email: ${email}`);
 
-        // 1. Check Shopify
-        const shopifyCustomer = await findCustomerInShopify(
-          email,
+      // 1. Check Shopify
+      const shopifyCustomer = await findCustomerInShopify(
+        email,
+        env.SHOPIFY_SHOP,
+        env.SHAPETECH_ADMIN_API_KEY
+      );
+
+      if (shopifyCustomer) {
+        console.log("Found in Shopify:", shopifyCustomer.email);
+
+        const did =
+          shopifyCustomer.metafields?.edges?.find(
+            (edge) =>
+              edge.node.namespace === "external" &&
+              edge.node.key === "bydesign_id"
+          )?.node.value || null;
+
+        return jsonResponse({ did });
+      }
+
+      // 2. If not in Shopify, check ByDesign
+      const byDesignCustomer = await findCustomerInByDesign(
+        email,
+        env.BYDESIGN_BASE,
+        env.BYDESIGN_API_KEY
+      );
+
+      if (byDesignCustomer) {
+        console.log("Found in ByDesign:", byDesignCustomer.Email);
+
+        // Create Shopify customer
+        const createdCustomer = await createCustomerInShopify(
+          byDesignCustomer,
           env.SHOPIFY_SHOP,
           env.SHAPETECH_ADMIN_API_KEY
         );
 
-        if (shopifyCustomer) {
-          console.log("Found in Shopify:", shopifyCustomer.email);
-
-          const did =
-            shopifyCustomer.metafields?.edges?.find(
-              (edge) =>
-                edge.node.namespace === "external" &&
-                edge.node.key === "bydesign_id"
-            )?.node.value || null;
-
-          return jsonResponse({ did });
-        }
-
-        // 2. If not in Shopify, check ByDesign
-        const byDesignCustomer = await findCustomerInByDesign(
-          email,
-          env.BYDESIGN_BASE,
-          env.BYDESIGN_API_KEY
-        );
-
-        if (byDesignCustomer) {
-          console.log("Found in ByDesign:", byDesignCustomer.Email);
-
-          // Create Shopify customer
-          const createdCustomer = await createCustomerInShopify(
+        // Create address in Shopify if ByDesign has one
+        if (
+          byDesignCustomer.ShipStreet1 &&
+          byDesignCustomer.ShipCity &&
+          byDesignCustomer.ShipState &&
+          byDesignCustomer.ShipCountry &&
+          byDesignCustomer.ShipPostalCode
+        ) {
+          await createCustomerAddressInShopify(
+            createdCustomer.id,
             byDesignCustomer,
             env.SHOPIFY_SHOP,
             env.SHAPETECH_ADMIN_API_KEY
           );
-
-          // Create address in Shopify if ByDesign has one
-          if (
-            byDesignCustomer.ShipStreet1 &&
-            byDesignCustomer.ShipCity &&
-            byDesignCustomer.ShipState &&
-            byDesignCustomer.ShipCountry &&
-            byDesignCustomer.ShipPostalCode
-          ) {
-            await createCustomerAddressInShopify(
-              createdCustomer.id,
-              byDesignCustomer,
-              env.SHOPIFY_SHOP,
-              env.SHAPETECH_ADMIN_API_KEY
-            );
-          }
-
-          return jsonResponse({
-            did: String(byDesignCustomer.CustomerDID || ""),
-          });
         }
 
-        // 3. Not found anywhere
-        return jsonResponse({ did: null });
+        return jsonResponse({
+          did: String(byDesignCustomer.CustomerDID || ""),
+        });
       }
 
-      // === CASE 2: REP LOOKUP BY REP PARAM ===
-      if (url.pathname === "/lookup-rep") {
-        const rep = url.searchParams.get("rep");
-        if (!rep) {
-          return jsonResponse({ error: "Missing rep" }, 400);
-        }
-
-        console.log(`Looking up rep: ${rep}`);
-
-        // Step 1: Rep info
-        const repRes = await fetch(
-          `${env.BYDESIGN_BASE}/VoxxLifeSandbox/api/User/Rep/${rep}/info`,
-          {
-            headers: {
-              Authorization: `Basic ${env.BYDESIGN_API_KEY}`,
-              Accept: "application/json",
-            },
-          }
-        );
-
-        if (!repRes.ok) {
-          return jsonResponse({ error: "Rep not found" }, repRes.status);
-        }
-
-        const repData = await repRes.json();
-        let result = repData;
-
-        // Step 2: Public info (for DisplayName, ImageUrl, etc.)
-        if (repData?.RepDID) {
-          const pubRes = await fetch(
-            `${env.BYDESIGN_BASE}/VoxxLifeSandbox/api/rep/PublicInfo/GetInfo?repDID=${repData.RepDID}`,
-            {
-              headers: {
-                Authorization: `Basic ${env.BYDESIGN_API_KEY}`,
-                Accept: "application/json",
-              },
-            }
-          );
-
-          if (pubRes.ok) {
-            const pubData = await pubRes.json();
-            result.DisplayName = pubData.DisplayName || repData.DisplayName;
-            result.ImageUrl = pubData.ImageUrl || null;
-          }
-        }
-
-        return jsonResponse(result);
-      }
-
-      // Default response
-      return jsonResponse({ error: "Unknown endpoint" }, 404);
+      // 3. Not found anywhere
+      return jsonResponse({ did: null });
     } catch (err) {
       console.error("Worker error:", err.message);
-      return jsonResponse({ error: err.message }, 500);
+      return jsonResponse({ did: null, error: err.message }, 500);
     }
   },
 };
 
 // ---------- Helpers ----------
+
 function jsonResponse(data, status = 200) {
   return new Response(JSON.stringify(data, null, 2), {
     status,
