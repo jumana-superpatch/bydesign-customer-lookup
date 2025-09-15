@@ -87,52 +87,47 @@ export default {
 
       // === CASE 2: REP LOOKUP BY REP PARAM ===
       if (url.pathname === "/lookup-rep") {
-        const rep = url.searchParams.get("rep");
-        if (!rep) {
-          return jsonResponse({ error: "Missing rep" }, 400);
-        }
+  const rep = url.searchParams.get("rep");
+  if (!rep) {
+    return jsonResponse({ error: "Missing rep parameter" }, 400);
+  }
 
-        console.log(`Looking up rep: ${rep}`);
+  let repData = null;
 
-        // Step 1: Rep info
-        const repRes = await fetch(
-          `${env.BYDESIGN_BASE}/VoxxLifeSandbox/api/User/Rep/${rep}/info`,
-          {
-            headers: {
-              Authorization: `Basic ${env.BYDESIGN_API_KEY}`,
-              Accept: "application/json",
-            },
-          }
-        );
+  try {
+    if (/^\d+$/.test(rep)) {
+      // Case 1: numeric RepDID
+      const resp = await fetch(`${env.BYDESIGN_BASE}/VoxxLifeSandbox/api/User/Rep/${rep}/info`, {
+        headers: {
+          Authorization: `Basic ${env.BYDESIGN_API_KEY}`,
+          Accept: "application/json",
+        },
+      });
+      if (resp.ok) repData = await resp.json();
+    } else {
+      // Case 2: rep URL/username
+      const resp = await fetch(`${env.BYDESIGN_BASE}/VoxxLifeSandbox/api/rep/PublicInfo/GetInfo?repURL=${encodeURIComponent(rep)}`, {
+        headers: {
+          Authorization: `Basic ${env.BYDESIGN_API_KEY}`,
+          Accept: "application/json",
+        },
+      });
+      if (resp.ok) repData = await resp.json();
+    }
 
-        if (!repRes.ok) {
-          return jsonResponse({ error: "Rep not found" }, repRes.status);
-        }
+    if (!repData) {
+      return jsonResponse({ error: "Rep not found" }, 404);
+    }
 
-        const repData = await repRes.json();
-        let result = repData;
-
-        // Step 2: Public info (for DisplayName, ImageUrl, etc.)
-        if (repData?.RepDID) {
-          const pubRes = await fetch(
-            `${env.BYDESIGN_BASE}/VoxxLifeSandbox/api/rep/PublicInfo/GetInfo?repDID=${repData.RepDID}`,
-            {
-              headers: {
-                Authorization: `Basic ${env.BYDESIGN_API_KEY}`,
-                Accept: "application/json",
-              },
-            }
-          );
-
-          if (pubRes.ok) {
-            const pubData = await pubRes.json();
-            result.DisplayName = pubData.DisplayName || repData.DisplayName;
-            result.ImageUrl = pubData.ImageUrl || null;
-          }
-        }
-
-        return jsonResponse(result);
-      }
+    return jsonResponse({
+      RepDID: repData.RepDID || null,
+      DisplayName: repData.DisplayName || repData.FirstName + " " + repData.LastName || null,
+    });
+  } catch (err) {
+    console.error("Rep lookup failed:", err);
+    return jsonResponse({ error: "Lookup error" }, 500);
+  }
+}
 
       // Default response
       return jsonResponse({ error: "Unknown endpoint" }, 404);
@@ -193,7 +188,7 @@ async function findCustomerInShopify(email, shop, token) {
 }
 
 async function findCustomerInByDesign(email, base, apiKey) {
-  const res = await fetch(`${base}/VoxxLife/api/users/customer/CustomerLookup`, {
+  const res = await fetch(`${base}/VoxxLifeSandbox/api/users/customer/CustomerLookup`, {
     method: "POST",
     headers: {
       Accept: "application/json",
