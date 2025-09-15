@@ -97,7 +97,7 @@ export default {
   try {
     if (/^\d+$/.test(rep)) {
       // Case 1: numeric RepDID
-      const resp = await fetch(`${env.BYDESIGN_BASE}/VoxxLifeSandbox/api/User/Rep/${rep}/info`, {
+      const resp = await fetch(`${env.BYDESIGN_BASE}VoxxLifeSandbox/api/User/Rep/${rep}/info`, {
         headers: {
           Authorization: `Basic ${env.BYDESIGN_API_KEY}`,
           Accept: "application/json",
@@ -106,7 +106,7 @@ export default {
       if (resp.ok) repData = await resp.json();
     } else {
       // Case 2: rep URL/username
-      const resp = await fetch(`${env.BYDESIGN_BASE}/VoxxLifeSandbox/api/rep/PublicInfo/GetInfo?repURL=${encodeURIComponent(rep)}`, {
+      const resp = await fetch(`${env.BYDESIGN_BASE}VoxxLifeSandbox/api/rep/PublicInfo/GetInfo?repURL=${encodeURIComponent(rep)}`, {
         headers: {
           Authorization: `Basic ${env.BYDESIGN_API_KEY}`,
           Accept: "application/json",
