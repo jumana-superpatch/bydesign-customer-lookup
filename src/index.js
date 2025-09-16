@@ -82,10 +82,9 @@ export default {
 			if (url.pathname === "/lookup-rep") {
 				const rep = url.searchParams.get("rep");
 				if (!rep) {
-					return jsonResponse({ error: "Missing rep parameter" }, 400);
+					return jsonResponse(defaultRepData,200);
 				}
 
-				try {
 					// 1. Call /api/User/Rep/{rep}/info
 					const repInfoResp = await fetch(
 						`${env.BYDESIGN_BASE}/VoxxLife/api/User/Rep/${encodeURIComponent(rep)}/info`,
@@ -95,60 +94,34 @@ export default {
 								Accept: "application/json",
 							},
 						}
-					);
+					).then(resp => resp.json())
+					.then(({RepDID}) => 
+						fetch ().then(resp => resp.json())
+					).then(({
+						RepDID,
+						DisplayName,
+						DisplayNameHeader,
+						FirstName,
+						LastName,
+						ShouldAskToSwitch,
+						ReplicatedSiteUrl
+					}) => {
+						return {RepDID,
+						DisplayName,
+						DisplayNameHeader,
+						FirstName,
+						LastName,
+						ShouldAskToSwitch,
+						ReplicatedSiteUrl}
+					}).catch(() => {
+						return defaultRepData
+					});
 
-					let repData = {};
-					if (repInfoResp.ok) {
-						repData = await repInfoResp.json();
-					}
+					return jsonResponse(repInfoResp);
 
-					// 2. If RepDID found → fetch PublicInfo
-					let repPublic = {};
-					if (repData?.RepDID) {
-						const pubResp = await fetch(
-							`${env.BYDESIGN_BASE}/VoxxLife/api/rep/PublicInfo/GetInfo?repDID=${encodeURIComponent(repData.RepDID)}`,
-							{
-								headers: {
-									Authorization: `Basic ${env.BYDESIGN_API_KEY}`,
-									Accept: "application/json",
-								},
-							}
-						);
-						if (pubResp.ok) {
-							repPublic = await pubResp.json();
-						}
-					}
+				
 
-					// 3. Merge results
-					const merged = {
-						...repData,
-						...repPublic,
-					};
-
-					// Normalize a few fields like in PHP
-					if (repData?.RenewalDate) {
-						merged.RenewalDate = new Date(repData.RenewalDate).toISOString();
-					}
-					if (repPublic?.DisplayName) {
-						merged.DisplayName = repPublic.DisplayName;
-						merged.DisplayNameHeader = repPublic.DisplayNameHeader;
-					}
-					if (repData?.URL) {
-						merged.SiteUrl = repData.URL;
-					}
-					if (repData?.RankTypeID) {
-						merged.LifetimeRankID = repData.RankTypeID;
-					}
-
-					if (!merged?.RepDID) {
-						return jsonResponse({ error: "Rep not found" }, 404);
-					}
-
-					return jsonResponse(merged);
-				} catch (err) {
-					console.error("Rep lookup failed:", err);
-					return jsonResponse({ error: "Lookup error" }, 500);
-				}
+				
 			}
 			// === CASE 3: CUSTOMER → REP LOOKUP FLOW ===
 
@@ -244,7 +217,7 @@ export default {
 
 // ---------- Helpers ----------
 function jsonResponse(data, status = 200) {
-	return new Response(JSON.stringify(data, null, 2), {
+	return new Response(JSON.stringify(data), {
 		status,
 		headers: {
 			"Content-Type": "application/json",
