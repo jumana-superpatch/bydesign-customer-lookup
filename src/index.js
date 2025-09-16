@@ -79,49 +79,70 @@ export default {
 			}
 
 			// === CASE 2: REP LOOKUP ===
+			const defaultRepData = {
+				RepDID: "111115011",
+				DisplayName: "Super Patch",
+				DisplayNameHeader: "Super P.",
+				FirstName: "Super",
+				LastName: "Patch",
+				ShouldAskToSwitch: false,
+				ReplicatedSiteUrl: "www"
+			};
+			
 			if (url.pathname === "/lookup-rep") {
 				const rep = url.searchParams.get("rep");
+
+				// If no rep param → default
 				if (!rep) {
-					return jsonResponse(defaultRepData,200);
+					return jsonResponse(defaultRepData);
 				}
 
-					// 1. Call /api/User/Rep/{rep}/info
-					const repInfoResp = await fetch(
-						`${env.BYDESIGN_BASE}/VoxxLife/api/User/Rep/${encodeURIComponent(rep)}/info`,
-						{
-							headers: {
-								Authorization: `Basic ${env.BYDESIGN_API_KEY}`,
-								Accept: "application/json",
-							},
+				return fetch(
+					`${env.BYDESIGN_BASE}/VoxxLife/api/User/Rep/${encodeURIComponent(rep)}/info`,
+					{
+						headers: {
+							Authorization: `Basic ${env.BYDESIGN_API_KEY}`,
+							Accept: "application/json"
 						}
-					).then(resp => resp.json())
-					.then(({RepDID}) => 
-						fetch ().then(resp => resp.json())
-					).then(({
-						RepDID,
-						DisplayName,
-						DisplayNameHeader,
-						FirstName,
-						LastName,
-						ShouldAskToSwitch,
-						ReplicatedSiteUrl
-					}) => {
-						return {RepDID,
-						DisplayName,
-						DisplayNameHeader,
-						FirstName,
-						LastName,
-						ShouldAskToSwitch,
-						ReplicatedSiteUrl}
-					}).catch(() => {
-						return defaultRepData
-					});
+					}
+				)
+					.then(r => r.json())
+					.then(({ RepDID }) => {
+						if (!RepDID) return defaultRepData;
 
-					return jsonResponse(repInfoResp);
-
-				
-
-				
+						return fetch(
+							`${env.BYDESIGN_BASE}/VoxxLife/api/rep/PublicInfo/GetInfo?repDID=${encodeURIComponent(RepDID)}`,
+							{
+								headers: {
+									Authorization: `Basic ${env.BYDESIGN_API_KEY}`,
+									Accept: "application/json"
+								}
+							}
+						)
+							.then(r => r.json())
+							.then(
+								({
+									RepDID,
+									DisplayName,
+									DisplayNameHeader,
+									FirstName,
+									LastName,
+									ShouldAskToSwitch,
+									ReplicatedSiteUrl
+								}) => ({
+									RepDID,
+									DisplayName,
+									DisplayNameHeader,
+									FirstName,
+									LastName,
+									ShouldAskToSwitch,
+									ReplicatedSiteUrl
+								})
+							)
+							.catch(() => defaultRepData);
+					})
+					.then(finalData => jsonResponse(finalData))
+					.catch(() => jsonResponse(defaultRepData));
 			}
 			// === CASE 3: CUSTOMER → REP LOOKUP FLOW ===
 
