@@ -150,6 +150,87 @@ export default {
 					return jsonResponse({ error: "Lookup error" }, 500);
 				}
 			}
+			// === CASE 3: CUSTOMER → REP LOOKUP FLOW ===
+
+			if (url.pathname === "/lookup-checkout") {
+				const email = url.searchParams.get("email");
+				if (!email) {
+					return jsonResponse({ error: "Missing email" }, 400);
+				}
+
+				try {
+					// 1. Customer lookup
+					const custResp = await fetch(
+						`${env.BYDESIGN_BASE}/VoxxLife/api/users/customer/CustomerLookup?email=${encodeURIComponent(email)}`,
+						{
+							headers: {
+								Authorization: `Basic ${env.BYDESIGN_API_KEY}`,
+								Accept: "application/json",
+							},
+						}
+					);
+
+					if (!custResp.ok) {
+						return jsonResponse({ error: "Customer lookup failed" }, 404);
+					}
+
+					const custData = await custResp.json();
+					const customerDID = custData?.CustomerDID;
+					if (!customerDID) {
+						return jsonResponse({ error: "Customer not found" }, 404);
+					}
+
+					// 2. Get RepDID for customer
+					const repLinkResp = await fetch(
+						`${env.BYDESIGN_BASE}/VoxxLifeSandbox/api/rep/PublicInfo/GetForCustomer/${encodeURIComponent(customerDID)}`,
+						{
+							headers: {
+								Authorization: `Basic ${env.BYDESIGN_API_KEY}`,
+								Accept: "application/json",
+							},
+						}
+					);
+
+					let repDID = null;
+					if (repLinkResp.ok) {
+						const repLink = await repLinkResp.json();
+						repDID = repLink?.RepDID;
+					}
+
+					// 3. Get Rep info (if RepDID found)
+					let repData = {};
+					if (repDID) {
+						const repInfoResp = await fetch(
+							`${env.BYDESIGN_BASE}/VoxxLifeSandbox/api/User/Rep/${encodeURIComponent(repDID)}/info`,
+							{
+								headers: {
+									Authorization: `Basic ${env.BYDESIGN_API_KEY}`,
+									Accept: "application/json",
+								},
+							}
+						);
+						if (repInfoResp.ok) {
+							repData = await repInfoResp.json();
+						}
+					}
+
+					return jsonResponse({
+						customer: {
+							did: customerDID,
+							email: custData?.Email || email,
+						},
+						rep: {
+							did: repDID || null,
+							email: repData?.Email || null,
+							firstName: repData?.FirstName || null,
+							lastName: repData?.LastName || null,
+						},
+					});
+				} catch (err) {
+					console.error("Customer→Rep flow failed:", err);
+					return jsonResponse({ error: err.message }, 500);
+				}
+			}
 
 
 			// Unknown endpoint
