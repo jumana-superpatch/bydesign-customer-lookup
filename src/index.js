@@ -88,7 +88,7 @@ export default {
 				try {
 					// 1. Call /api/User/Rep/{rep}/info
 					const repInfoResp = await fetch(
-						`${env.BYDESIGN_BASE}/VoxxLifeSandbox/api/User/Rep/${encodeURIComponent(rep)}/info`,
+						`${env.BYDESIGN_BASE}/VoxxLife/api/User/Rep/${encodeURIComponent(rep)}/info`,
 						{
 							headers: {
 								Authorization: `Basic ${env.BYDESIGN_API_KEY}`,
@@ -106,7 +106,7 @@ export default {
 					let repPublic = {};
 					if (repData?.RepDID) {
 						const pubResp = await fetch(
-							`${env.BYDESIGN_BASE}/VoxxLifeSandbox/api/rep/PublicInfo/GetInfo?repDID=${encodeURIComponent(repData.RepDID)}`,
+							`${env.BYDESIGN_BASE}/VoxxLife/api/rep/PublicInfo/GetInfo?repDID=${encodeURIComponent(repData.RepDID)}`,
 							{
 								headers: {
 									Authorization: `Basic ${env.BYDESIGN_API_KEY}`,
@@ -182,7 +182,7 @@ export default {
 
 					// 2. Get RepDID for customer
 					const repLinkResp = await fetch(
-						`${env.BYDESIGN_BASE}/VoxxLifeSandbox/api/rep/PublicInfo/GetForCustomer/${encodeURIComponent(customerDID)}`,
+						`${env.BYDESIGN_BASE}/VoxxLife/api/rep/PublicInfo/GetForCustomer/${encodeURIComponent(customerDID)}`,
 						{
 							headers: {
 								Authorization: `Basic ${env.BYDESIGN_API_KEY}`,
@@ -201,7 +201,7 @@ export default {
 					let repData = {};
 					if (repDID) {
 						const repInfoResp = await fetch(
-							`${env.BYDESIGN_BASE}/VoxxLifeSandbox/api/User/Rep/${encodeURIComponent(repDID)}/info`,
+							`${env.BYDESIGN_BASE}/VoxxLife/api/User/Rep/${encodeURIComponent(repDID)}/info`,
 							{
 								headers: {
 									Authorization: `Basic ${env.BYDESIGN_API_KEY}`,
