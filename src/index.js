@@ -28,7 +28,6 @@ export default {
       if (url.pathname === "/lookup-rep") {
         const rep = url.searchParams.get("rep");
 
-        // If no rep param → return default
         if (!rep) {
           return jsonResponse(defaultRepData);
         }
@@ -81,7 +80,6 @@ export default {
           .catch(() => jsonResponse(defaultRepData));
       }
 
-      // Unknown endpoint
       return jsonResponse({ error: "Unknown endpoint" }, 404);
     } catch (err) {
       console.error("Worker error:", err.message);
@@ -90,7 +88,6 @@ export default {
   },
 };
 
-// ---------- Helpers ----------
 function jsonResponse(data, status = 200) {
   return new Response(JSON.stringify(data), {
     status,
